@@ -1,43 +1,74 @@
 import 'package:final_project/Pages/signup.dart';
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 
-class WelcomePage extends StatelessWidget {
+class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
+
+  @override
+  State<WelcomePage> createState() => _WelcomePageState();
+}
+
+class _WelcomePageState extends State<WelcomePage> with TickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(seconds: 10),
+      vsync: this,
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
+    final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Column(
-        children: <Widget>[
-          ClipPath(
-            clipper: WaveClipper(),
-            child: Container(
-              height: screenHeight * 0.5,
-              width: double.infinity,
-              decoration: const BoxDecoration(
-                image: DecorationImage(
-                  image: AssetImage("Images/Welcome.png"),
-                  fit: BoxFit.cover,
-                ),
-              ),
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: SingleChildScrollView(
+        child: Column(
+          children: <Widget>[
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) {
+                return ClipRRect(
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(1)), // Fix for jagged edges
+                  child: ClipPath(
+                    clipper: WaveClipper(_controller.value),
+                    child: Container(
+                      height: screenHeight * 0.5,
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        image: DecorationImage(
+                          image: AssetImage("Images/Welcome.png"),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
-          ),
-          Expanded(
-            child: Padding(
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 40.0),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Spacer(),
-                  const Text(
+                  const SizedBox(height: 20),
+                  Text(
                     "Welcome to UniVent",
-                    style: TextStyle(
-                      fontSize: 32.0,
+                    style: theme.textTheme.headlineLarge?.copyWith(
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF00008B),
+                      color: theme.colorScheme.primary,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -45,12 +76,11 @@ class WelcomePage extends StatelessWidget {
                   Text(
                     "Your ultimate guide to university events, clubs, and more.",
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.grey.shade700,
-                      fontSize: 18.0,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: theme.colorScheme.onBackground.withOpacity(0.7),
                     ),
                   ),
-                  const Spacer(flex: 2),
+                  const SizedBox(height: 40),
                   ElevatedButton(
                     onPressed: () {
                       Navigator.push(
@@ -62,15 +92,13 @@ class WelcomePage extends StatelessWidget {
                     },
                     style: ElevatedButton.styleFrom(
                       minimumSize: const Size(double.infinity, 50),
-                      backgroundColor: const Color(0xFF00008B),
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),
                     ),
-                    child: const Text(
-                      "Log In",
-                      style: TextStyle(fontSize: 18, color: Colors.white),
-                    ),
+                    child: const Text("Log In"),
                   ),
                   const SizedBox(height: 20.0),
                   OutlinedButton(
@@ -84,50 +112,53 @@ class WelcomePage extends StatelessWidget {
                     },
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size(double.infinity, 50),
-                      side: const BorderSide(color: Color(0xFF00008B)),
+                      side: BorderSide(color: theme.colorScheme.primary),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),
                     ),
-                    child: const Text(
-                      "Sign Up",
-                      style: TextStyle(fontSize: 18, color: Color(0xFF00008B)),
-                    ),
+                    child: Text("Sign Up", style: TextStyle(color: theme.colorScheme.primary)),
                   ),
-                  const Spacer(),
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-// Custom Clipper for the wave effect
+
 class WaveClipper extends CustomClipper<Path> {
+  final double animationValue;
+
+  WaveClipper(this.animationValue);
+
   @override
   Path getClip(Size size) {
     var path = Path();
-    path.lineTo(0, size.height - 50);
-    var firstControlPoint = Offset(size.width / 4, size.height);
-    var firstEndPoint = Offset(size.width / 2.25, size.height - 30.0);
-    path.quadraticBezierTo(firstControlPoint.dx, firstControlPoint.dy,
-        firstEndPoint.dx, firstEndPoint.dy);
+    // The anti-aliasing is enabled by the ClipRRect widget in the build method
+    path.lineTo(0, size.height - 40);
 
-    var secondControlPoint =
-        Offset(size.width - (size.width / 3.25), size.height - 65);
-    var secondEndPoint = Offset(size.width, size.height - 40);
-    path.quadraticBezierTo(secondControlPoint.dx, secondControlPoint.dy,
-        secondEndPoint.dx, secondEndPoint.dy);
+    double waveHeight = 20;
+    // A combination of two sine waves for a more natural feel
+    path.cubicTo(
+        size.width / 4,
+        size.height - 40 + waveHeight * math.sin(animationValue * 2 * math.pi),
+        size.width * 3 / 4,
+        size.height - 40 - waveHeight * math.sin(animationValue * 2 * math.pi + math.pi / 2),
+        size.width,
+        size.height - 40);
 
-    path.lineTo(size.width, size.height - 40);
     path.lineTo(size.width, 0);
     path.close();
     return path;
   }
 
   @override
-  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
+  bool shouldReclip(WaveClipper oldClipper) {
+    return animationValue != oldClipper.animationValue;
+  }
 }

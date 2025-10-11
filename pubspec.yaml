@@ -1,50 +1,48 @@
 name: final_project
-description: "A new University event Application"
+description: "A new Flutter project."
+
 publish_to: 'none'
+
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.4.3 <4.0.0'
+  sdk: '>=3.4.1 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  curved_navigation_bar: ^1.0.3
-  firebase_core: ^2.31.0
-  firebase_auth: ^4.19.5
+  cupertino_icons: ^1.0.6
+  firebase_core: ^3.1.0
+  firebase_auth: ^5.1.0
   google_sign_in: ^6.2.1
-  cloud_firestore: ^4.17.3
-  firebase_storage: ^11.7.5
-  image_picker: ^1.1.2
-  random_string: ^2.3.1
-  cupertino_icons: ^1.0.8
-  firebase_app_check: ^0.2.2+1
+  cloud_firestore: ^5.0.1
+  google_fonts: ^6.2.1
+  provider: ^6.1.2
   intl: ^0.19.0
+  image_picker: ^1.1.2
+  firebase_storage: ^12.0.1
+  url_launcher: ^6.3.0
+  firebase_app_check: ^0.3.0+1
+  curved_navigation_bar: ^1.0.3
   cached_network_image: ^3.3.1
-  flutter_native_splash: ^2.4.0
+  random_string: ^2.3.1
   flutter_rating_bar: ^4.0.1
-  url_launcher: ^6.2.6
+  shared_preferences: ^2.2.3
+  shimmer: ^3.0.0
 
+  # Added for Map Feature
+  google_maps_flutter: ^2.6.1
+  geolocator: ^12.0.0
+  google_maps_cluster_manager_2: ^3.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^4.0.0
-  flutter_launcher_icons: ^0.13.1
+  flutter_lints: ^3.0.0
 
 flutter:
   uses-material-design: true
-
   assets:
     - Images/
-
-flutter_native_splash:
-  image: Images/onboarding.png
-  color: "#00008B"
-  android_gravity: center
-  ios_content_mode: center
-
-flutter_launcher_icons:
-  android: "launcher_icon"
-  ios: true
-  image_path: "Images/Logo.png"
+    - Images/map_style.json
+    - Images/map_style_dark.json

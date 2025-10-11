@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'package:final_project/Pages/admin_page.dart';
 import 'package:final_project/Pages/booking.dart';
-import 'package:final_project/Pages/signup.dart';
+import 'package:final_project/services/auth.dart';
 import 'package:final_project/services/database.dart';
+import 'package:final_project/services/theme_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class Profile extends StatefulWidget {
@@ -21,6 +24,7 @@ class _ProfileState extends State<Profile> {
   String _userMajor = "Not Set";
   int _upcomingEventsCount = 0;
   int _attendedEventsCount = 0;
+  bool _isAdmin = false;
 
   @override
   void initState() {
@@ -63,6 +67,7 @@ class _ProfileState extends State<Profile> {
           setState(() {
             _userName = userData['Name'] ?? 'No Name';
             _userMajor = userData['Major'] ?? "Not Set";
+            _isAdmin = userData['isAdmin'] ?? false;
             _upcomingEventsCount = upcoming;
             _attendedEventsCount = attended;
           });
@@ -93,11 +98,7 @@ class _ProfileState extends State<Profile> {
     );
 
     if (confirmed == true) {
-      await FirebaseAuth.instance.signOut();
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const Signup()),
-        (Route<dynamic> route) => false,
-      );
+        await AuthMethods().signOut();
     }
   }
 
@@ -158,20 +159,20 @@ class _ProfileState extends State<Profile> {
                 width: 40,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white,
+                  color: Theme.of(context).cardColor, // Use theme color
                   border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 2)
                 ),
-                child: const Icon(Icons.edit, color: Colors.black, size: 20),
+                child: Icon(Icons.edit, color: Theme.of(context).colorScheme.primary, size: 20),
               ),
             ),
           ],
         ),
         const SizedBox(height: 15),
-        Text(_userName.isNotEmpty ? _userName : "Loading...", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        Text(_userName.isNotEmpty ? _userName : "Loading...", style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
         const SizedBox(height: 5),
-        Text(_userEmail, style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
+        Text(_userEmail, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.grey.shade600)),
          const SizedBox(height: 5),
-        Text(_userMajor, style: TextStyle(fontSize: 16, color: Colors.blue.shade800, fontWeight: FontWeight.w500)),
+        Text(_userMajor, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w500)),
       ],
     );
   }
@@ -182,8 +183,6 @@ class _ProfileState extends State<Profile> {
       children: [
         _buildStatColumn(_attendedEventsCount.toString(), "Attended"),
         _buildStatColumn(_upcomingEventsCount.toString(), "Upcoming"),
-        // You can add a condition to show "Hosted" for organizers
-        // _buildStatColumn("5", "Hosted"), 
       ],
     );
   }
@@ -191,17 +190,19 @@ class _ProfileState extends State<Profile> {
   Widget _buildStatColumn(String value, String label) {
     return Column(
       children: [
-        Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        Text(value, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 16)),
+        Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
       ],
     );
   }
 
   Widget _buildMenu() {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final theme = Theme.of(context);
     return Container(
        decoration: BoxDecoration(
-          color: Colors.white,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(15.0),
            boxShadow: [
             BoxShadow(
@@ -213,36 +214,56 @@ class _ProfileState extends State<Profile> {
         ),
         child: Column(
         children: [
+          if (_isAdmin) ...[
+             ListTile(
+              leading: Icon(Icons.admin_panel_settings, color: theme.colorScheme.primary),
+              title: const Text("Admin Panel"),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminPage())),
+            ),
+            const Divider(indent: 16, endIndent: 16, height: 1),
+          ],
+           SwitchListTile(
+            title: const Text('Dark Mode'),
+            secondary: Icon(Icons.dark_mode_outlined, color: theme.colorScheme.primary),
+            value: themeProvider.darkTheme,
+            activeColor: theme.colorScheme.primary,
+            inactiveTrackColor: theme.colorScheme.onSurface.withOpacity(0.2),
+            onChanged: (value) {
+              themeProvider.setDarkTheme(value);
+            },
+          ),
+          const Divider(indent: 16, endIndent: 16, height: 1),
           ListTile(
-            leading: const Icon(Icons.calendar_today_outlined),
+            leading: Icon(Icons.calendar_today_outlined, color: theme.colorScheme.primary),
             title: const Text("My Bookings"),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const Booking())),
           ),
           const Divider(indent: 16, endIndent: 16, height: 1),
           ListTile(
-            leading: const Icon(Icons.edit_outlined),
+            leading: Icon(Icons.edit_outlined, color: theme.colorScheme.primary),
             title: const Text("Edit Profile"),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () {},
           ),
            const Divider(indent: 16, endIndent: 16, height: 1),
           ListTile(
-            leading: const Icon(Icons.notifications_outlined),
+            leading: Icon(Icons.notifications_outlined, color: theme.colorScheme.primary),
             title: const Text("Notifications"),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () {},
           ),
            const Divider(indent: 16, endIndent: 16, height: 1),
           ListTile(
-            leading: const Icon(Icons.feedback_outlined),
+            leading: Icon(Icons.feedback_outlined, color: theme.colorScheme.primary),
             title: const Text("Report Bug / Feedback"),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: _launchFeedbackEmail,
           ),
            const Divider(indent: 16, endIndent: 16, height: 1),
           ListTile(
-            leading: const Icon(Icons.share_outlined),
+            leading: Icon(Icons.share_outlined, color: theme.colorScheme.primary),
             title: const Text("Share UniVent"),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () {},

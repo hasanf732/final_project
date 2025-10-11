@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:shimmer/shimmer.dart';
 
 class Home extends StatefulWidget {
   const Home({super.key});
@@ -113,7 +114,8 @@ class _HomeState extends State<Home> {
       stream: eventStream,
       builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting && _searchQuery.isEmpty) {
-          return const SizedBox(height: 285, child: Center(child: CircularProgressIndicator()));
+          bool isFeaturedModeShimmer = _selectedCategory == null && !_showAllEvents && _searchQuery.isEmpty;
+           return isFeaturedModeShimmer ? _buildFeaturedShimmer() : _buildListShimmer();
         }
         if (snapshot.hasError) {
           return Center(child: Text("Error: ${snapshot.error}"));
@@ -220,22 +222,18 @@ class _HomeState extends State<Home> {
                           height: 180,
                           width: MediaQuery.of(context).size.width,
                           fit: BoxFit.cover,
-                          placeholder: (context, url) => Container(
-                            height: 180,
-                            width: MediaQuery.of(context).size.width,
-                            decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(15.0)),
-                          ),
+                          placeholder: (context, url) => _buildShimmerImage(),
                           errorWidget: (context, url, error) => Container(
                             height: 180,
                             width: MediaQuery.of(context).size.width,
-                            decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(15.0)),
+                            decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface.withOpacity(0.1), borderRadius: BorderRadius.circular(15.0)),
                             child: Icon(Icons.broken_image, color: Colors.grey.shade400, size: 40),
                           ),
                         )
                       : Container(
                           height: 180,
                           width: MediaQuery.of(context).size.width,
-                          decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(15.0)),
+                          decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface.withOpacity(0.1), borderRadius: BorderRadius.circular(15.0)),
                           child: Icon(Icons.image_not_supported, color: Colors.grey.shade400, size: 40),
                         ),
                 ),
@@ -243,13 +241,13 @@ class _HomeState extends State<Home> {
                   Container(
                     margin: const EdgeInsets.only(left: 15.0, top: 9.0),
                     padding: const EdgeInsets.all(5.0),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10.0)),
-                    child: Text(DateFormat("MMM\ndd").format(eventDate), textAlign: TextAlign.center, style: const TextStyle(color: Colors.black, fontSize: 14.0, fontWeight: FontWeight.bold)),
+                    decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(10.0)),
+                    child: Text(DateFormat("MMM\ndd").format(eventDate), textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontSize: 14.0, fontWeight: FontWeight.bold)),
                   ),
               ],
             ),
             const SizedBox(height: 10.0),
-            Text(eventName, style: const TextStyle(color: Colors.black, fontSize: 20.0, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+            Text(eventName, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
             const SizedBox(height: 5.0),
             if (eventLocation != null && eventLocation.isNotEmpty)
               Row(
@@ -267,131 +265,194 @@ class _HomeState extends State<Home> {
     );
   }
 
+  Widget _buildShimmerImage() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: Container(
+        height: 180,
+        width: MediaQuery.of(context).size.width,
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15.0)),
+      ),
+    );
+  }
+
+  Widget _buildFeaturedShimmer() {
+    return SizedBox(
+      height: 285,
+      child: PageView.builder(
+        itemCount: 1,
+        itemBuilder: (context, index) => _buildShimmerEventCard(),
+      ),
+    );
+  }
+
+  Widget _buildListShimmer() {
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 3, // Show 3 shimmer items
+      itemBuilder: (context, index) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 15.0),
+          child: _buildShimmerEventCard(),
+        );
+      },
+    );
+  }
+
+  Widget _buildShimmerEventCard() {
+    return Shimmer.fromColors(
+      baseColor: Theme.of(context).colorScheme.surface.withOpacity(0.5),
+      highlightColor: Theme.of(context).colorScheme.surface,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 10.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 180,
+              width: double.infinity,
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15.0)),
+            ),
+            const SizedBox(height: 10.0),
+            Container(
+              height: 20,
+              width: 200,
+              color: Colors.white,
+            ),
+            const SizedBox(height: 5.0),
+            Container(
+              height: 16,
+              width: 150,
+              color: Colors.white,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      body: Stack(
-        children: [
-          Container(
-            width: MediaQuery.of(context).size.width,
-            height: MediaQuery.of(context).size.height,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(colors: [Color(0xffe3e6ff), Color(0xfff1f3ff), Colors.white], begin: Alignment.topLeft, end: Alignment.bottomRight),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.only(top: 50.0, left: 20.0, right: 20.0),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(children: [Icon(Icons.location_on_outlined, color: Colors.black), SizedBox(width: 5.0), Text("Polytechnic, Bahrain", style: TextStyle(color: Colors.black, fontSize: 20.0, fontWeight: FontWeight.w500))]),
-                  const SizedBox(height: 20.0),
-                  Text("Hello, ${_userName.isNotEmpty ? _userName : 'User'}!", style: const TextStyle(color: Colors.black, fontSize: 25.0, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10.0),
-                   StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance.collection('News').snapshots(),
-                    builder: (context, snapshot) {
-                      if (snapshot.hasData) {
-                        final eventCount = snapshot.data!.docs.length;
-                        final eventText = eventCount == 1 ? "event" : "events";
-                        final verb = eventCount == 1 ? "is" : "are";
-                        return Text(
-                          "There $verb $eventCount $eventText in\npolytechnic campus.",
-                          style: const TextStyle(
-                            color: Color(0xFF00008B),
-                            fontSize: 25.0,
-                            fontWeight: FontWeight.bold,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+              colors: [
+                theme.colorScheme.primary.withOpacity(0.1),
+                theme.colorScheme.surface.withOpacity(0.1),
+                theme.scaffoldBackgroundColor
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [Icon(Icons.location_on_outlined, color: theme.colorScheme.primary), const SizedBox(width: 5.0), Text("Polytechnic, Bahrain", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500))]),
+                const SizedBox(height: 20.0),
+                Text("Hello, ${_userName.isNotEmpty ? _userName : 'User'}!", style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10.0),
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance.collection('News').snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasData) {
+                      final eventCount = snapshot.data!.docs.length;
+                      final eventText = eventCount == 1 ? "event" : "events";
+                      final verb = eventCount == 1 ? "is" : "are";
+                      return Text(
+                        "There $verb $eventCount $eventText in\npolytechnic campus.",
+                        style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
+                      );
+                    } else {
+                      return Text(
+                        "Loading events...",
+                        style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(height: 20.0),
+                AnimatedSearchBar(searchController: _searchController, hintTexts: _hintTexts),
+                const SizedBox(height: 20.0),
+                SizedBox(
+                  height: 110,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _categories.length,
+                    itemBuilder: (context, index) {
+                      var category = _categories[index];
+                      bool isSelected = category['name'] == _selectedCategory;
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _currentPage = 0;
+                            _showAllEvents = false;
+                            _searchController.clear();
+                            if (isSelected) {
+                              _selectedCategory = null;
+                            } else {
+                              _selectedCategory = category['name'];
+                            }
+                          });
+                        },
+                        child: Container(
+                          width: 100,
+                          margin: const EdgeInsets.only(right: 15.0),
+                          padding: const EdgeInsets.all(10.0),
+                          decoration: BoxDecoration(
+                            color: isSelected ? theme.colorScheme.primary : theme.cardColor,
+                            borderRadius: BorderRadius.circular(15),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8.0, offset: const Offset(0, 2))],
                           ),
-                        );
-                      } else {
-                        return const Text(
-                          "Loading events...",
-                          style: TextStyle(
-                            color: Color(0xFF00008B),
-                            fontSize: 25.0,
-                            fontWeight: FontWeight.bold,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Image.asset(category['image']!, height: 60, width: 60, fit: BoxFit.cover, color: isSelected ? theme.colorScheme.onPrimary : theme.iconTheme.color, colorBlendMode: isSelected ? BlendMode.srcIn : null),
+                              const SizedBox(height: 10),
+                              Text(category['name']!, style: TextStyle(color: isSelected ? theme.colorScheme.onPrimary : theme.textTheme.bodyLarge?.color, fontSize: 14.0, fontWeight: FontWeight.bold)),
+                            ],
                           ),
-                        );
-                      }
+                        ),
+                      );
                     },
                   ),
-                  const SizedBox(height: 20.0),
-                  AnimatedSearchBar(searchController: _searchController, hintTexts: _hintTexts),
-                  const SizedBox(height: 20.0),
-                  SizedBox(
-                    height: 110,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _categories.length,
-                      itemBuilder: (context, index) {
-                        var category = _categories[index];
-                        bool isSelected = category['name'] == _selectedCategory;
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _currentPage = 0;
-                              _showAllEvents = false;
-                              _searchController.clear();
-                              if (isSelected) {
-                                _selectedCategory = null;
-                              } else {
-                                _selectedCategory = category['name'];
-                              }
-                            });
-                          },
-                          child: Container(
-                            width: 100,
-                            margin: const EdgeInsets.only(right: 15.0),
-                            padding: const EdgeInsets.all(10.0),
-                            decoration: BoxDecoration(
-                              color: isSelected ? const Color(0xFF00008B) : Colors.white,
-                              borderRadius: BorderRadius.circular(15),
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8.0, offset: const Offset(0, 4))],
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Image.asset(category['image']!, height: 60, width: 60, fit: BoxFit.cover, color: isSelected ? Colors.white : null, colorBlendMode: isSelected ? BlendMode.srcIn : null),
-                                const SizedBox(height: 10),
-                                Text(category['name']!, style: TextStyle(color: isSelected ? Colors.white : Colors.black, fontSize: 14.0, fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
+                ),
+                const SizedBox(height: 20.0),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _searchQuery.isNotEmpty
+                          ? 'Search Results'
+                          : _selectedCategory == null
+                              ? (_showAllEvents ? "All Events" : "Featured Events")
+                              : "Events in $_selectedCategory",
+                      style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
                     ),
-                  ),
-                  const SizedBox(height: 20.0),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _searchQuery.isNotEmpty
-                            ? 'Search Results'
-                            : _selectedCategory == null
-                                ? (_showAllEvents ? "All Events" : "Featured Events")
-                                : "Events in $_selectedCategory",
-                        style: const TextStyle(color: Colors.black, fontSize: 22.0, fontWeight: FontWeight.bold),
-                      ),
-                      if (_selectedCategory == null && _searchQuery.isEmpty)
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _showAllEvents = !_showAllEvents;
-                            });
-                          },
-                          child: Text(_showAllEvents ? "Show Featured" : "See all", style: const TextStyle(color: Color(0xFF00008B))),
-                        )
-                    ],
-                  ),
-                  const SizedBox(height: 20.0),
-                  allEvents(),
-                ],
-              ),
+                    if (_selectedCategory == null && _searchQuery.isEmpty)
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _showAllEvents = !_showAllEvents;
+                          });
+                        },
+                        child: Text(_showAllEvents ? "Show Featured" : "See all", style: TextStyle(color: theme.colorScheme.primary)),
+                      )
+                  ],
+                ),
+                const SizedBox(height: 20.0),
+                allEvents(),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -496,7 +557,7 @@ class _AnimatedSearchBarState extends State<AnimatedSearchBar> {
     final bool hasText = widget.searchController.text.isNotEmpty;
 
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(13)),
+      decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(13)),
       child: TextField(
         controller: widget.searchController,
         decoration: InputDecoration(

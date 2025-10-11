@@ -1,11 +1,11 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:final_project/Pages/location_picker_page.dart';
 import 'package:final_project/services/database.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:random_string/random_string.dart';
 
 class UploadEvent extends StatefulWidget {
   const UploadEvent({super.key});
@@ -22,6 +22,7 @@ class _UploadEventState extends State<UploadEvent> {
   TimeOfDay? _selectedTime;
   File? selectedImage;
   String? _selectedCategory;
+  LatLng? _pickedLocation;
   bool _isUploading = false;
 
   final ImagePicker _picker = ImagePicker();
@@ -45,6 +46,7 @@ class _UploadEventState extends State<UploadEvent> {
       _selectedDate = null;
       _selectedTime = null;
       _selectedCategory = null;
+      _pickedLocation = null;
     });
   }
 
@@ -74,6 +76,20 @@ class _UploadEventState extends State<UploadEvent> {
     }
   }
 
+  Future<void> _pickLocation() async {
+    final picked = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute(
+        builder: (context) => const LocationPickerPage(),
+      ),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _pickedLocation = picked;
+      });
+    }
+  }
+
   Future getImage() async {
     final image = await _picker.pickImage(source: ImageSource.gallery);
     if (image != null) {
@@ -85,49 +101,54 @@ class _UploadEventState extends State<UploadEvent> {
   uploadItem() async {
     if (_isUploading) return;
 
-    if (selectedImage != null &&
-        _nameController.text.isNotEmpty &&
-        _selectedDate != null &&
-        _selectedCategory != null) {
-      setState(() {
-        _isUploading = true;
-      });
+    if (selectedImage == null ||
+        _nameController.text.isEmpty ||
+        _detailController.text.isEmpty ||
+        _locationController.text.isEmpty ||
+        _selectedDate == null ||
+        _selectedTime == null ||
+        _pickedLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Please fill all fields and select an image, date, time, and location.")));
+      return;
+    }
 
-      String addId = randomAlphaNumeric(10);
+    setState(() {
+      _isUploading = true;
+    });
 
-      Reference firebaseStorageRef =
-          FirebaseStorage.instance.ref().child("blogImage").child(addId);
-      final UploadTask task = firebaseStorageRef.putFile(selectedImage!);
+    try {
+      final combinedDateTime = DateTime(
+        _selectedDate!.year,
+        _selectedDate!.month,
+        _selectedDate!.day,
+        _selectedTime!.hour,
+        _selectedTime!.minute,
+      );
 
-      try {
-        var downloadUrl = await (await task).ref.getDownloadURL();
-        Map<String, dynamic> addEvent = {
-          "Name": _nameController.text,
-          "Detail": _detailController.text,
-          "Location": _locationController.text,
-          "Time": _selectedTime?.format(context) ?? '',
-          "Date": Timestamp.fromDate(_selectedDate!),
-          "Image": downloadUrl,
-          "Category": _selectedCategory,
-          "ratings": {},
-        };
+      await DatabaseMethods().addNews(
+        selectedImage!,
+        _nameController.text.trim(),
+        _detailController.text.trim(),
+        _locationController.text.trim(),
+        _pickedLocation!.latitude,
+        _pickedLocation!.longitude,
+        combinedDateTime,
+      );
 
-        await DatabaseMethods().addEvent(addEvent, addId).then((value) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("Event has been uploaded successfully")));
-          _resetForm();
-        });
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error uploading event: $e")));
-      } finally {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Event has been uploaded successfully")));
+      _resetForm();
+
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error uploading event: $e")));
+    } finally {
+      if (mounted) {
         setState(() {
           _isUploading = false;
         });
       }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text("Please fill all fields, including category, and select an image.")));
     }
   }
 
@@ -135,7 +156,7 @@ class _UploadEventState extends State<UploadEvent> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
+        title: const Text(
           "Upload Event",
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
@@ -143,7 +164,7 @@ class _UploadEventState extends State<UploadEvent> {
       ),
       body: SingleChildScrollView(
         child: Container(
-          margin: EdgeInsets.all(20.0),
+          margin: const EdgeInsets.all(20.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -159,7 +180,7 @@ class _UploadEventState extends State<UploadEvent> {
                           decoration: BoxDecoration(
                               color: Colors.grey[200],
                               borderRadius: BorderRadius.circular(10)),
-                          child: Icon(Icons.camera_alt_outlined, size: 50.0),
+                          child: const Icon(Icons.camera_alt_outlined, size: 50.0),
                         )
                       : ClipRRect(
                           borderRadius: BorderRadius.circular(10),
@@ -172,15 +193,15 @@ class _UploadEventState extends State<UploadEvent> {
                         ),
                 ),
               ),
-              SizedBox(height: 20.0),
-               _buildDropdown("Category", _selectedCategory, _categories, (value) {
+              const SizedBox(height: 20.0),
+              _buildDropdown("Category", _selectedCategory, _categories, (value) {
                 setState(() {
                   _selectedCategory = value;
                 });
               }),
-              SizedBox(height: 20.0),
+              const SizedBox(height: 20.0),
               _buildTextField("Event Name", _nameController),
-              SizedBox(height: 20.0),
+              const SizedBox(height: 20.0),
               Row(
                 children: [
                   Expanded(
@@ -192,7 +213,7 @@ class _UploadEventState extends State<UploadEvent> {
                         Icons.calendar_today,
                         () => _selectDate(context)),
                   ),
-                  SizedBox(width: 20),
+                  const SizedBox(width: 20),
                   Expanded(
                     child: _buildPicker(
                         "Time",
@@ -204,19 +225,21 @@ class _UploadEventState extends State<UploadEvent> {
                   ),
                 ],
               ),
-              SizedBox(height: 20.0),
-              _buildTextField("Location", _locationController),
-              SizedBox(height: 20.0),
+              const SizedBox(height: 20.0),
+              _buildTextField("Location Description", _locationController),
+              const SizedBox(height: 20.0),
+              _buildLocationPicker(),
+              const SizedBox(height: 20.0),
               _buildDetailTextField("Event Detail", _detailController),
-              SizedBox(height: 40.0),
+              const SizedBox(height: 40.0),
               Center(
                 child: ElevatedButton(
                   onPressed: _isUploading ? null : uploadItem,
-                  child: _isUploading
-                      ? CircularProgressIndicator(color: Colors.white)
-                      : Text("Add Event", style: TextStyle(fontSize: 20)),
                   style: ElevatedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15)),
+                      padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15)),
+                  child: _isUploading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text("Add Event", style: TextStyle(fontSize: 20)),
                 ),
               )
             ],
@@ -226,23 +249,57 @@ class _UploadEventState extends State<UploadEvent> {
     );
   }
 
+  Widget _buildLocationPicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Event Coordinates",
+          style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 5.0),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 15.0),
+          decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey),
+              borderRadius: BorderRadius.circular(10)),
+          child: Text(
+            _pickedLocation == null
+                ? "No location selected"
+                : "Lat: ${_pickedLocation!.latitude.toStringAsFixed(4)}, Lon: ${_pickedLocation!.longitude.toStringAsFixed(4)}",
+            style: const TextStyle(fontSize: 16.0),
+          ),
+        ),
+        const SizedBox(height: 10.0),
+        Center(
+          child: ElevatedButton.icon(
+            onPressed: _pickLocation,
+            icon: const Icon(Icons.map),
+            label: const Text("Pick Location on Map"),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildTextField(String hint, TextEditingController controller) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           hint,
-          style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
+          style: const TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
         ),
-        SizedBox(height: 5.0),
+        const SizedBox(height: 5.0),
         Container(
-          padding: EdgeInsets.symmetric(horizontal: 10.0),
+          padding: const EdgeInsets.symmetric(horizontal: 10.0),
           decoration: BoxDecoration(
               border: Border.all(color: Colors.grey),
               borderRadius: BorderRadius.circular(10)),
           child: TextField(
             controller: controller,
-            decoration: InputDecoration(border: InputBorder.none),
+            decoration: const InputDecoration(border: InputBorder.none),
           ),
         )
       ],
@@ -255,18 +312,18 @@ class _UploadEventState extends State<UploadEvent> {
       children: [
         Text(
           hint,
-          style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
+          style: const TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
         ),
-        SizedBox(height: 5.0),
+        const SizedBox(height: 5.0),
         Container(
-          padding: EdgeInsets.symmetric(horizontal: 10.0),
+          padding: const EdgeInsets.symmetric(horizontal: 10.0),
           decoration: BoxDecoration(
               border: Border.all(color: Colors.grey),
               borderRadius: BorderRadius.circular(10)),
           child: TextField(
             controller: controller,
             maxLines: 5,
-            decoration: InputDecoration(border: InputBorder.none, hintText: "Enter details here..."),
+            decoration: const InputDecoration(border: InputBorder.none, hintText: "Enter details here..."),
           ),
         )
       ],
@@ -280,21 +337,21 @@ class _UploadEventState extends State<UploadEvent> {
       children: [
         Text(
           title,
-          style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
+          style: const TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
         ),
-        SizedBox(height: 5.0),
+        const SizedBox(height: 5.0),
         GestureDetector(
           onTap: onTap,
           child: Container(
-            padding: EdgeInsets.symmetric(horizontal: 10.0, vertical: 15.0),
+            padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 15.0),
             decoration: BoxDecoration(
                 border: Border.all(color: Colors.grey),
                 borderRadius: BorderRadius.circular(10)),
             child: Row(
               children: [
                 Icon(icon, color: Colors.grey.shade700),
-                SizedBox(width: 10),
-                Text(value, style: TextStyle(fontSize: 16.0)),
+                const SizedBox(width: 10),
+                Text(value, style: const TextStyle(fontSize: 16.0)),
               ],
             ),
           ),
@@ -304,35 +361,34 @@ class _UploadEventState extends State<UploadEvent> {
   }
 
   Widget _buildDropdown(String title, String? selectedValue, List<String> items, ValueChanged<String?> onChanged) {
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        title,
-        style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
-      ),
-      SizedBox(height: 5.0),
-      Container(
-        padding: EdgeInsets.symmetric(horizontal: 10.0),
-        decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey),
-            borderRadius: BorderRadius.circular(10)),
-        child: DropdownButtonFormField<String>(
-          value: selectedValue,
-          hint: Text("Select a category"),
-          isExpanded: true,
-          decoration: InputDecoration(border: InputBorder.none),
-          items: items.map((String value) {
-            return DropdownMenuItem<String>(
-              value: value,
-              child: Text(value),
-            );
-          }).toList(),
-          onChanged: onChanged,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
         ),
-      ),
-    ],
-  );
-}
-
+        const SizedBox(height: 5.0),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10.0),
+          decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey),
+              borderRadius: BorderRadius.circular(10)),
+          child: DropdownButtonFormField<String>(
+            value: selectedValue,
+            hint: const Text("Select a category"),
+            isExpanded: true,
+            decoration: const InputDecoration(border: InputBorder.none),
+            items: items.map((String value) {
+              return DropdownMenuItem<String>(
+                value: value,
+                child: Text(value),
+              );
+            }).toList(),
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
 }

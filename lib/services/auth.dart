@@ -7,34 +7,30 @@ class AuthMethods {
   final FirebaseAuth auth = FirebaseAuth.instance;
 
   Future<void> signInWithGoogle() async {
-    try {
-      final GoogleSignInAccount? googleSignInAccount = await GoogleSignIn().signIn();
-      if (googleSignInAccount == null) return; // User cancelled
+    // Throws exceptions to be handled by the UI
+    final GoogleSignInAccount? googleSignInAccount = await GoogleSignIn().signIn();
+    if (googleSignInAccount == null) return; // User cancelled
 
-      final GoogleSignInAuthentication googleSignInAuthentication =
-          await googleSignInAccount.authentication;
+    final GoogleSignInAuthentication googleSignInAuthentication =
+        await googleSignInAccount.authentication;
 
-      final AuthCredential credential = GoogleAuthProvider.credential(
-          idToken: googleSignInAuthentication.idToken,
-          accessToken: googleSignInAuthentication.accessToken);
+    final AuthCredential credential = GoogleAuthProvider.credential(
+        idToken: googleSignInAuthentication.idToken,
+        accessToken: googleSignInAuthentication.accessToken);
 
-      UserCredential result = await auth.signInWithCredential(credential);
-      User? userDetails = result.user;
+    UserCredential result = await auth.signInWithCredential(credential);
+    User? userDetails = result.user;
 
-      if (userDetails != null) {
-        Map<String, dynamic> userInfoMap = {
-          "Name": userDetails.displayName,
-          "Image": userDetails.photoURL,
-          "Email": userDetails.email,
-          "Id": userDetails.uid,
-          'lastSignInTime': FieldValue.serverTimestamp(),
-        };
-        // Just update user data. AuthWrapper will handle navigation.
-        await DatabaseMethods().addUserDetail(userInfoMap, userDetails.uid);
-      }
-    } on FirebaseAuthException catch (e) {
-      // This error can be handled in the UI if needed
-      print("Google Sign-In Error: ${e.message}");
+    if (userDetails != null) {
+      Map<String, dynamic> userInfoMap = {
+        "Name": userDetails.displayName,
+        "Image": userDetails.photoURL,
+        "Email": userDetails.email,
+        "Id": userDetails.uid,
+        'lastSignInTime': FieldValue.serverTimestamp(),
+      };
+      // Using addUserDetail to ensure all user data is stored consistently
+      await DatabaseMethods().addUserDetail(userInfoMap, userDetails.uid);
     }
   }
 
@@ -47,7 +43,6 @@ class AuthMethods {
     UserCredential result = await auth.signInWithEmailAndPassword(
         email: email, password: password);
 
-    // Update last sign-in time
     if (result.user != null) {
       await DatabaseMethods().addUserInfo({'lastSignInTime': FieldValue.serverTimestamp()}, result.user!.uid);
     }
@@ -56,8 +51,8 @@ class AuthMethods {
   }
 
   Future<void> signOut() async {
+    print(">>> SIGN OUT from services/auth.dart");
     await auth.signOut();
     await GoogleSignIn().signOut();
-    // Navigation will be handled by the AuthWrapper stream
   }
 }
