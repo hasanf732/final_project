@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+import 'package:in_app_review/in_app_review.dart';
 import 'package:shimmer/shimmer.dart';
 
 class DetailPage extends StatefulWidget {
@@ -22,7 +24,7 @@ class DetailPage extends StatefulWidget {
   State<DetailPage> createState() => _DetailPageState();
 }
 
-class _DetailPageState extends State<DetailPage> {
+class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   double _userRating = 0.0;
   double _averageRating = 0.0;
   int _totalRatings = 0;
@@ -31,24 +33,76 @@ class _DetailPageState extends State<DetailPage> {
   bool _isReviewSectionExpanded = false;
   bool _isRegistered = false;
   bool _isLoadingReviews = true;
+  bool _isFavorite = false;
+  bool _isTogglingFavorite = false;
+  Timer? _reviewRequestTimer;
+
+  late AnimationController _animationController;
+  late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
     _getRatingAndReviews();
     _checkIfRegistered();
+    _checkIfFavorite();
+
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.5).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.elasticOut),
+    );
+
+    _reviewRequestTimer = Timer(const Duration(seconds: 10), () {
+      if (mounted) {
+        _showReviewDialog();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _reviewRequestTimer?.cancel();
+    _reviewController.dispose();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _showReviewDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Enjoying the App?'),
+        content: const Text('Would you like to leave a review on the Play Store?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Not Now'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              final InAppReview inAppReview = InAppReview.instance;
+              if (await inAppReview.isAvailable()) {
+                inAppReview.requestReview();
+              }
+            },
+            child: const Text('Rate It'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _checkIfRegistered() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-
     DocumentSnapshot userDoc = await DatabaseMethods().getUser(user.uid);
     if (userDoc.exists && userDoc.data() != null) {
       Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-      if (mounted &&
-          userData.containsKey('bookedEvents') &&
-          (userData['bookedEvents'] as List).contains(widget.id)) {
+      if (mounted && (userData['bookedEvents'] as List?)?.contains(widget.id) == true) {
         setState(() {
           _isRegistered = true;
         });
@@ -56,21 +110,47 @@ class _DetailPageState extends State<DetailPage> {
     }
   }
 
-  Future<void> _getRatingAndReviews() async {
+  Future<void> _checkIfFavorite() async {
+    bool isFav = await DatabaseMethods().isFavorite(widget.id);
     if (mounted) {
       setState(() {
-        _isLoadingReviews = true;
+        _isFavorite = isFav;
       });
     }
-    DocumentSnapshot doc =
-        await FirebaseFirestore.instance.collection("News").doc(widget.id).get();
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isTogglingFavorite) return;
+
+    setState(() {
+      _isTogglingFavorite = true;
+    });
+
+    if (_isFavorite) {
+      await DatabaseMethods().removeFromFavorites(widget.id);
+    } else {
+      await DatabaseMethods().addToFavorites(widget.id);
+      _animationController.forward().then((_) => _animationController.reverse());
+    }
+
+    if (mounted) {
+      setState(() {
+        _isFavorite = !_isFavorite;
+        _isTogglingFavorite = false;
+      });
+    }
+  }
+
+  Future<void> _getRatingAndReviews() async {
+    if (mounted) setState(() => _isLoadingReviews = true);
+    DocumentSnapshot doc = await FirebaseFirestore.instance.collection("News").doc(widget.id).get();
     if (doc.exists && doc.data() != null) {
       Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
       if (data.containsKey('ratings')) {
         Map<String, dynamic> ratings = data['ratings'];
         List<Map<String, dynamic>> reviewsList = [];
-
         double total = 0;
+
         ratings.forEach((key, value) {
           if (value is Map && value.containsKey('rating')) {
             total += value['rating'];
@@ -84,24 +164,14 @@ class _DetailPageState extends State<DetailPage> {
 
         if (mounted) {
           setState(() {
-            if (ratings.isNotEmpty) {
-              _totalRatings = ratings.length;
-              _averageRating = total / _totalRatings;
-              _reviews = reviewsList;
-            } else {
-              _totalRatings = 0;
-              _averageRating = 0.0;
-              _reviews = [];
-            }
+            _totalRatings = ratings.isNotEmpty ? ratings.length : 0;
+            _averageRating = ratings.isNotEmpty ? total / ratings.length : 0.0;
+            _reviews = reviewsList;
           });
         }
       }
     }
-    if (mounted) {
-      setState(() {
-        _isLoadingReviews = false;
-      });
-    }
+    if (mounted) setState(() => _isLoadingReviews = false);
   }
 
   @override
@@ -174,6 +244,24 @@ class _DetailPageState extends State<DetailPage> {
           child: BackButton(color: theme.colorScheme.onSurface),
         ),
       ),
+       actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 16.0, top: 8, bottom: 8),
+          child: CircleAvatar(
+             backgroundColor: theme.colorScheme.surface.withOpacity(0.8),
+            child: ScaleTransition(
+              scale: _scaleAnimation,
+              child: IconButton(
+                icon: Icon(
+                  _isFavorite ? Icons.favorite : Icons.favorite_border,
+                  color: _isFavorite ? Colors.red : theme.colorScheme.onSurface,
+                ),
+                onPressed: _toggleFavorite,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

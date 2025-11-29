@@ -5,11 +5,26 @@ import 'package:final_project/services/database.dart';
 
 class AuthMethods {
   final FirebaseAuth auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  Future<bool> isAdmin() async {
+    final user = auth.currentUser;
+    if (user == null) return false;
+    try {
+      DocumentSnapshot userDoc = await _firestore.collection('users').doc(user.uid).get();
+      if (userDoc.exists && userDoc.data() != null) {
+        return (userDoc.data() as Map<String, dynamic>)['role'] == 'admin';
+      }
+      return false;
+    } catch (e) {
+      print("Error checking admin status: $e");
+      return false;
+    }
+  }
 
   Future<void> signInWithGoogle() async {
-    // Throws exceptions to be handled by the UI
     final GoogleSignInAccount? googleSignInAccount = await GoogleSignIn().signIn();
-    if (googleSignInAccount == null) return; // User cancelled
+    if (googleSignInAccount == null) return; 
 
     final GoogleSignInAuthentication googleSignInAuthentication =
         await googleSignInAccount.authentication;
@@ -22,21 +37,37 @@ class AuthMethods {
     User? userDetails = result.user;
 
     if (userDetails != null) {
-      Map<String, dynamic> userInfoMap = {
-        "Name": userDetails.displayName,
-        "Image": userDetails.photoURL,
-        "Email": userDetails.email,
-        "Id": userDetails.uid,
-        'lastSignInTime': FieldValue.serverTimestamp(),
-      };
-      // Using addUserDetail to ensure all user data is stored consistently
-      await DatabaseMethods().addUserDetail(userInfoMap, userDetails.uid);
+      // Check if user already exists to preserve their role
+      DocumentSnapshot userDoc = await _firestore.collection('users').doc(userDetails.uid).get();
+      if (!userDoc.exists) {
+         Map<String, dynamic> userInfoMap = {
+          "Name": userDetails.displayName,
+          "Image": userDetails.photoURL,
+          "Email": userDetails.email,
+          "Id": userDetails.uid,
+          'lastSignInTime': FieldValue.serverTimestamp(),
+          'role': 'user', // Default role
+        };
+        await DatabaseMethods().addUserDetail(userInfoMap, userDetails.uid);
+      }
     }
   }
 
-  Future<UserCredential> signUpWithEmailAndPassword(String email, String password) async {
-    return await auth.createUserWithEmailAndPassword(
+  Future<UserCredential> signUpWithEmailAndPassword(String email, String password, String fullName) async {
+    UserCredential result = await auth.createUserWithEmailAndPassword(
         email: email, password: password);
+    
+    User? user = result.user;
+    if (user != null) {
+        Map<String, dynamic> userInfoMap = {
+        "Name": fullName,
+        "Email": email,
+        "Id": user.uid,
+        'role': 'user', // Default role
+      };
+      await DatabaseMethods().addUserDetail(userInfoMap, user.uid);
+    }
+    return result;
   }
 
   Future<UserCredential> signInWithEmailAndPassword(String email, String password) async {
@@ -44,7 +75,7 @@ class AuthMethods {
         email: email, password: password);
 
     if (result.user != null) {
-      await DatabaseMethods().addUserInfo({'lastSignInTime': FieldValue.serverTimestamp()}, result.user!.uid);
+      await DatabaseMethods().addUserDetail({'lastSignInTime': FieldValue.serverTimestamp()}, result.user!.uid);
     }
 
     return result;

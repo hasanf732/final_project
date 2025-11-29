@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:final_project/Pages/detail_page.dart';
+import 'package:final_project/Pages/favorites_page.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
 
@@ -17,24 +19,16 @@ class Home extends StatefulWidget {
 
 class _HomeState extends State<Home> {
   String? _selectedCategory;
-  bool _showAllEvents = false;
-  final PageController _pageController = PageController(viewportFraction: 1.0);
-  Timer? _carouselTimer;
-  int _currentPage = 0;
   String _userName = "";
+  Position? _currentPosition;
+  Set<String> _favoriteEventIds = {};
+  StreamSubscription? _favoritesSubscription;
+  StreamSubscription? _positionStreamSubscription;
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
 
-  final List<String> _hintTexts = [
-    "Search for Events",
-    "Search for Art",
-    "Search for Sport",
-    "Search for Music",
-    "Search for Film",
-    "Search for Cyber",
-  ];
-
+  final List<String> _hintTexts = ["Search for Events", "Search for Art", "Search for Sport", "Search for Music"];
   final List<Map<String, String>> _categories = [
     {'name': 'Music', 'image': 'Images/music1.png'},
     {'name': 'Media', 'image': 'Images/videography1.png'},
@@ -49,9 +43,9 @@ class _HomeState extends State<Home> {
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _loadInitialData();
     _searchController.addListener(() {
-      if (mounted && _searchQuery != _searchController.text) {
+      if (mounted) {
         setState(() {
           _searchQuery = _searchController.text;
         });
@@ -59,414 +53,557 @@ class _HomeState extends State<Home> {
     });
   }
 
-  void _loadUserData() async {
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _favoritesSubscription?.cancel();
+    _positionStreamSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadInitialData() async {
+    await _loadUserData();
+    _listenToFavorites();
+    _listenToLocationUpdates();
+  }
+
+  Future<void> _loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
         DocumentSnapshot userDoc = await DatabaseMethods().getUser(user.uid);
         if (userDoc.exists && userDoc.data() != null && mounted) {
           Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-          String fullName = userData['Name'] ?? '';
           setState(() {
-            _userName = fullName.split(' ').first;
+            _userName = (userData['Name'] ?? '').split(' ').first;
           });
         }
       } catch (e) {
-        if (mounted) {
-          setState(() {
-            _userName = "User";
-          });
-        }
+        if (mounted) setState(() => _userName = "User");
       }
     }
   }
 
-  @override
-  void dispose() {
-    _carouselTimer?.cancel();
-    _pageController.dispose();
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  void _startTimer(int pageCount) {
-    _carouselTimer?.cancel();
-    if (_selectedCategory == null && !_showAllEvents && pageCount > 0) {
-      _carouselTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-        if (_currentPage < pageCount - 1) {
-          _currentPage++;
-        } else {
-          _currentPage = 0;
-        }
-        if (_pageController.hasClients) {
-          _pageController.animateToPage(_currentPage, duration: const Duration(milliseconds: 400), curve: Curves.easeIn);
+  void _listenToFavorites() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _favoritesSubscription = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .snapshots()
+          .listen((userDoc) {
+        if (mounted && userDoc.exists && userDoc.data()!.containsKey('favoriteEvents')) {
+          final favs = List<String>.from(userDoc.data()!['favoriteEvents']);
+          if (mounted) {
+            setState(() {
+              _favoriteEventIds = favs.toSet();
+            });
+          }
         }
       });
     }
   }
 
-  Widget allEvents() {
-    Stream<QuerySnapshot> eventStream = (_selectedCategory != null)
-        ? FirebaseFirestore.instance.collection("News").where("Category", isEqualTo: _selectedCategory).snapshots()
-        : DatabaseMethods().getEventDetails();
+  void _listenToLocationUpdates() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: eventStream,
-      builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting && _searchQuery.isEmpty) {
-          bool isFeaturedModeShimmer = _selectedCategory == null && !_showAllEvents && _searchQuery.isEmpty;
-           return isFeaturedModeShimmer ? _buildFeaturedShimmer() : _buildListShimmer();
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission != LocationPermission.whileInUse && permission != LocationPermission.always) return;
+      }
+      
+      if (permission == LocationPermission.deniedForever) return;
+
+      const LocationSettings locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 100, // meters
+      );
+
+      _positionStreamSubscription = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+        (Position? position) {
+          if (mounted && position != null) {
+            setState(() {
+              _currentPosition = position;
+            });
+          }
+        },
+        onError: (e) {
+          print("Error getting location stream: $e");
         }
-        if (snapshot.hasError) {
-          return Center(child: Text("Error: ${snapshot.error}"));
-        }
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text("No events found."));
-        }
-
-        List<DocumentSnapshot> eventDocs = snapshot.data!.docs;
-
-        if (_searchQuery.isNotEmpty) {
-          eventDocs = eventDocs.where((doc) {
-            final eventName = (doc.data() as Map<String, dynamic>)['Name']?.toString().toLowerCase() ?? '';
-            return eventName.contains(_searchQuery.toLowerCase());
-          }).toList();
-        }
-
-        bool isFeaturedMode = _selectedCategory == null && !_showAllEvents && _searchQuery.isEmpty;
-
-        if (isFeaturedMode) {
-          List<DocumentSnapshot> featuredDocs = List.from(eventDocs);
-          featuredDocs.sort((a, b) {
-            int aRatings = (a.data() as Map<String, dynamic>).containsKey('ratings') ? (a['ratings'] as Map).length : 0;
-            int bRatings = (b.data() as Map<String, dynamic>).containsKey('ratings') ? (b['ratings'] as Map).length : 0;
-            return bRatings.compareTo(aRatings);
-          });
-          featuredDocs = featuredDocs.take(4).toList();
-          if (featuredDocs.isNotEmpty) _startTimer(featuredDocs.length);
-          
-          return SizedBox(
-            height: 285,
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: featuredDocs.length,
-              onPageChanged: (page) => _currentPage = page,
-              itemBuilder: (context, index) => _buildEventCard(featuredDocs[index], isFeatured: true),
-            ),
-          );
-        } else {
-          _carouselTimer?.cancel();
-          if (eventDocs.isEmpty) return const Center(child: Text("No events match your search."));
-          return ListView.builder(
-            padding: EdgeInsets.zero,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: eventDocs.length,
-            itemBuilder: (context, index) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 15.0),
-                child: _buildEventCard(eventDocs[index], isFeatured: false),
-              );
-            },
-          );
-        }
-      },
-    );
-  }
-
-  Widget _buildEventCard(DocumentSnapshot ds, {required bool isFeatured}) {
-    var data = ds.data() as Map<String, dynamic>;
-    final imageUrl = data['Image'] as String?;
-    final eventName = data['Name'] as String? ?? 'Untitled Event';
-    final eventLocation = data['Location'] as String?;
-    final eventDetail = data['Detail'] as String?;
-    final eventTime = data['Time'] as String?;
-    DateTime? eventDate;
-    final dateData = data['Date'];
-    String eventDateStr = '';
-    if (dateData is Timestamp) {
-      eventDate = dateData.toDate();
-      eventDateStr = DateFormat('yyyy-MM-dd').format(eventDate);
+      );
+    } catch (e) {
+      print("Error setting up location listener: $e");
     }
-
-    return GestureDetector(
-      onTap: () {
-        _carouselTimer?.cancel();
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DetailPage(
-              id: ds.id,
-              image: imageUrl ?? '',
-              name: eventName,
-              date: eventDateStr,
-              location: eventLocation ?? 'No location specified',
-              detail: eventDetail ?? 'No details available',
-              time: eventTime ?? 'No time specified',
-            ),
-          ),
-        ).then((_) => _startTimer(4));
-      },
-      child: Container(
-        margin: EdgeInsets.symmetric(horizontal: isFeatured ? 10.0 : 0.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(15.0),
-                  child: (imageUrl != null && imageUrl.isNotEmpty)
-                      ? CachedNetworkImage(
-                          imageUrl: imageUrl,
-                          height: 180,
-                          width: MediaQuery.of(context).size.width,
-                          fit: BoxFit.cover,
-                          placeholder: (context, url) => _buildShimmerImage(),
-                          errorWidget: (context, url, error) => Container(
-                            height: 180,
-                            width: MediaQuery.of(context).size.width,
-                            decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface.withOpacity(0.1), borderRadius: BorderRadius.circular(15.0)),
-                            child: Icon(Icons.broken_image, color: Colors.grey.shade400, size: 40),
-                          ),
-                        )
-                      : Container(
-                          height: 180,
-                          width: MediaQuery.of(context).size.width,
-                          decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface.withOpacity(0.1), borderRadius: BorderRadius.circular(15.0)),
-                          child: Icon(Icons.image_not_supported, color: Colors.grey.shade400, size: 40),
-                        ),
-                ),
-                if (eventDate != null)
-                  Container(
-                    margin: const EdgeInsets.only(left: 15.0, top: 9.0),
-                    padding: const EdgeInsets.all(5.0),
-                    decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(10.0)),
-                    child: Text(DateFormat("MMM\ndd").format(eventDate), textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontSize: 14.0, fontWeight: FontWeight.bold)),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 10.0),
-            Text(eventName, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 5.0),
-            if (eventLocation != null && eventLocation.isNotEmpty)
-              Row(
-                children: [
-                  Icon(Icons.location_on_outlined, color: Colors.grey.shade600, size: 18),
-                  const SizedBox(width: 5.0),
-                  Expanded(
-                    child: Text(eventLocation, style: TextStyle(color: Colors.grey.shade600, fontSize: 16.0), overflow: TextOverflow.ellipsis),
-                  ),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
   }
 
-  Widget _buildShimmerImage() {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey[300]!,
-      highlightColor: Colors.grey[100]!,
-      child: Container(
-        height: 180,
-        width: MediaQuery.of(context).size.width,
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15.0)),
-      ),
-    );
-  }
-
-  Widget _buildFeaturedShimmer() {
-    return SizedBox(
-      height: 285,
-      child: PageView.builder(
-        itemCount: 1,
-        itemBuilder: (context, index) => _buildShimmerEventCard(),
-      ),
-    );
-  }
-
-  Widget _buildListShimmer() {
-    return ListView.builder(
-      padding: EdgeInsets.zero,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: 3, // Show 3 shimmer items
-      itemBuilder: (context, index) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 15.0),
-          child: _buildShimmerEventCard(),
-        );
-      },
-    );
-  }
-
-  Widget _buildShimmerEventCard() {
-    return Shimmer.fromColors(
-      baseColor: Theme.of(context).colorScheme.surface.withOpacity(0.5),
-      highlightColor: Theme.of(context).colorScheme.surface,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 10.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 180,
-              width: double.infinity,
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15.0)),
-            ),
-            const SizedBox(height: 10.0),
-            Container(
-              height: 20,
-              width: 200,
-              color: Colors.white,
-            ),
-            const SizedBox(height: 5.0),
-            Container(
-              height: 16,
-              width: 150,
-              color: Colors.white,
-            ),
-          ],
-        ),
-      ),
-    );
+  void _toggleFavorite(String eventId) {
+    setState(() {
+      if (_favoriteEventIds.contains(eventId)) {
+        _favoriteEventIds.remove(eventId);
+        DatabaseMethods().removeFromFavorites(eventId);
+      } else {
+        _favoriteEventIds.add(eventId);
+        DatabaseMethods().addToFavorites(eventId);
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bool isSearching = _searchQuery.isNotEmpty;
+    final bool isFiltering = _selectedCategory != null;
+
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-              colors: [
-                theme.colorScheme.primary.withOpacity(0.1),
-                theme.colorScheme.surface.withOpacity(0.1),
-                theme.scaffoldBackgroundColor
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight),
-        ),
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0),
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            pinned: true,
+            floating: true,
+            elevation: 0,
+            backgroundColor: theme.scaffoldBackgroundColor.withOpacity(0.90),
+            title: Text("Hello, ${_userName.isNotEmpty ? _userName : 'User'}!"),
+            actions: [
+              IconButton(
+                icon: Icon(Icons.favorite, color: theme.colorScheme.primary, size: 28),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const FavoritesPage())),
+              ),
+            ],
+          ),
+          SliverToBoxAdapter(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [Icon(Icons.location_on_outlined, color: theme.colorScheme.primary), const SizedBox(width: 5.0), Text("Polytechnic, Bahrain", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500))]),
-                const SizedBox(height: 20.0),
-                Text("Hello, ${_userName.isNotEmpty ? _userName : 'User'}!", style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10.0),
-                StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance.collection('News').snapshots(),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasData) {
-                      final eventCount = snapshot.data!.docs.length;
-                      final eventText = eventCount == 1 ? "event" : "events";
-                      final verb = eventCount == 1 ? "is" : "are";
-                      return Text(
-                        "There $verb $eventCount $eventText in\npolytechnic campus.",
-                        style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
-                      );
-                    } else {
-                      return Text(
-                        "Loading events...",
-                        style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
-                      );
-                    }
-                  },
+                 Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
+                  child: AnimatedSearchBar(searchController: _searchController, hintTexts: _hintTexts),
                 ),
-                const SizedBox(height: 20.0),
-                AnimatedSearchBar(searchController: _searchController, hintTexts: _hintTexts),
-                const SizedBox(height: 20.0),
-                SizedBox(
-                  height: 110,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _categories.length,
-                    itemBuilder: (context, index) {
-                      var category = _categories[index];
-                      bool isSelected = category['name'] == _selectedCategory;
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _currentPage = 0;
-                            _showAllEvents = false;
-                            _searchController.clear();
-                            if (isSelected) {
-                              _selectedCategory = null;
-                            } else {
-                              _selectedCategory = category['name'];
-                            }
-                          });
-                        },
-                        child: Container(
-                          width: 100,
-                          margin: const EdgeInsets.only(right: 15.0),
-                          padding: const EdgeInsets.all(10.0),
-                          decoration: BoxDecoration(
-                            color: isSelected ? theme.colorScheme.primary : theme.cardColor,
-                            borderRadius: BorderRadius.circular(15),
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8.0, offset: const Offset(0, 2))],
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Image.asset(category['image']!, height: 60, width: 60, fit: BoxFit.cover, color: isSelected ? theme.colorScheme.onPrimary : theme.iconTheme.color, colorBlendMode: isSelected ? BlendMode.srcIn : null),
-                              const SizedBox(height: 10),
-                              Text(category['name']!, style: TextStyle(color: isSelected ? theme.colorScheme.onPrimary : theme.textTheme.bodyLarge?.color, fontSize: 14.0, fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 20.0),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _searchQuery.isNotEmpty
-                          ? 'Search Results'
-                          : _selectedCategory == null
-                              ? (_showAllEvents ? "All Events" : "Featured Events")
-                              : "Events in $_selectedCategory",
-                      style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    if (_selectedCategory == null && _searchQuery.isEmpty)
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            _showAllEvents = !_showAllEvents;
-                          });
-                        },
-                        child: Text(_showAllEvents ? "Show Featured" : "See all", style: TextStyle(color: theme.colorScheme.primary)),
-                      )
-                  ],
-                ),
-                const SizedBox(height: 20.0),
-                allEvents(),
+                const SizedBox(height: 12),
+                _buildCategorySelector(),
               ],
             ),
+          ),
+          if (isSearching || isFiltering)
+            _buildFilteredList()
+          else ...[
+            _buildSectionHeader("What's Hot 🔥"),
+            _buildHorizontalEventsList(hotEventsStream()),
+            _buildSectionHeader("Top Rated ⭐"),
+            _buildHorizontalEventsList(topRatedEventsStream()),
+            _buildSectionHeader("Nearest To You 📍"),
+            _buildVerticalEventsList(nearestEventsStream()),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Stream<List<DocumentSnapshot>> hotEventsStream() {
+    return FirebaseFirestore.instance
+        .collection('News')
+        .snapshots()
+        .map((snapshot) {
+      var docs = snapshot.docs.where((doc) {
+        final data = doc.data();
+        return data.containsKey('ratings') && (data['ratings'] as Map).isNotEmpty;
+      }).toList();
+
+      docs.sort((a, b) {
+        var aRatings = (a.data() as Map<String, dynamic>)['ratings']?.length ?? 0;
+        var bRatings = (b.data() as Map<String, dynamic>)['ratings']?.length ?? 0;
+        return bRatings.compareTo(aRatings);
+      });
+
+      return docs.take(7).toList();
+    });
+  }
+
+  Stream<List<DocumentSnapshot>> topRatedEventsStream() {
+    return FirebaseFirestore.instance
+        .collection('News')
+        .snapshots()
+        .map((snapshot) {
+          var docs = snapshot.docs.where((doc) => (doc.data() as Map<String, dynamic>).containsKey('ratings')).toList();
+          docs.sort((a, b) {
+            var aData = a.data() as Map<String, dynamic>;
+            var bData = b.data() as Map<String, dynamic>;
+            double aAvg = _calculateAverageRating(aData['ratings']);
+            double bAvg = _calculateAverageRating(bData['ratings']);
+            return bAvg.compareTo(aAvg);
+          });
+          return docs.take(7).toList();
+        });
+  }
+
+  Stream<List<DocumentSnapshot>> nearestEventsStream() {
+     return FirebaseFirestore.instance
+        .collection('News')
+        .snapshots()
+        .map((snapshot) {
+      if (_currentPosition == null) return [];
+      var docs = snapshot.docs;
+      docs.sort((a, b) {
+         var posA = a.data() as Map<String, dynamic>;
+         var posB = b.data() as Map<String, dynamic>;
+         var latA = posA['latitude'];
+         var lonA = posA['longitude'];
+         var latB = posB['latitude'];
+         var lonB = posB['longitude'];
+         if (latA is! num || lonA is! num || latB is! num || lonB is! num) return 0;
+         double distanceA = Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, latA.toDouble(), lonA.toDouble());
+         double distanceB = Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, latB.toDouble(), lonB.toDouble());
+         return distanceA.compareTo(distanceB);
+      });
+      return docs.take(10).toList();
+    });
+  }
+
+  double _calculateAverageRating(Map<String, dynamic>? ratings) {
+    if (ratings == null || ratings.isEmpty) return 0.0;
+    double total = 0;
+    ratings.forEach((key, value) {
+      total += (value['rating'] as num? ?? 0);
+    });
+    return total / ratings.length;
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.only(left: 20.0, right: 20.0, top: 24.0, bottom: 16.0),
+        child: Text(title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _buildHorizontalEventsList(Stream<List<DocumentSnapshot>> stream) {
+    return SliverToBoxAdapter(
+      child: StreamBuilder<List<DocumentSnapshot>>(
+        stream: stream,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) return _buildHorizontalShimmer();
+          if (!snapshot.hasData || snapshot.data!.isEmpty) return const SizedBox(height: 100, child: Center(child: Text("No events in this category yet.")));
+          
+          return SizedBox(
+            height: 225,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20.0),
+              itemCount: snapshot.data!.length,
+              itemBuilder: (context, index) {
+                final event = snapshot.data![index];
+                return _buildEventCard(event, isFavorite: _favoriteEventIds.contains(event.id), isFeatured: true);
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildVerticalEventsList(Stream<List<DocumentSnapshot>> stream) {
+    return StreamBuilder<List<DocumentSnapshot>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        if (_currentPosition == null) return const SliverToBoxAdapter(child: Center(heightFactor: 5, child: Text("Enable location to see nearby events.")));
+        if (snapshot.connectionState == ConnectionState.waiting) return SliverToBoxAdapter(child: _buildVerticalShimmer());
+        if (!snapshot.hasData || snapshot.data!.isEmpty) return const SliverToBoxAdapter(child: Center(heightFactor: 5, child: Text("No events nearby.")));
+
+        return SliverList(delegate: SliverChildBuilderDelegate((context, index) {
+          final event = snapshot.data![index];
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20.0),
+            child: _buildEventCard(event, isFavorite: _favoriteEventIds.contains(event.id), isFeatured: false),
+          );
+        }, childCount: snapshot.data!.length));
+      },
+    );
+  }
+
+   Widget _buildFilteredList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('News').snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) return SliverToBoxAdapter(child: _buildVerticalShimmer());
+        if (!snapshot.hasData) return const SliverToBoxAdapter(child: Center(heightFactor: 5, child: Text("Loading events...")));
+
+        var eventDocs = snapshot.data!.docs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          if (_searchQuery.isNotEmpty) {
+            return (data['Name'] as String? ?? '').toLowerCase().contains(_searchQuery.toLowerCase());
+          }
+          if (_selectedCategory != null) {
+            return (data['Category'] as String? ?? '') == _selectedCategory;
+          }
+          return false; 
+        }).toList();
+
+        if (eventDocs.isEmpty) return const SliverToBoxAdapter(child: Center(heightFactor: 5, child: Text("No events found for your query.")));
+
+        return SliverList(delegate: SliverChildBuilderDelegate((context, index) {
+            final event = eventDocs[index];
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0),
+              child: _buildEventCard(event, isFavorite: _favoriteEventIds.contains(event.id), isFeatured: false),
+            );
+        }, childCount: eventDocs.length));
+      },
+    );
+  }
+  
+  Widget _buildCategorySelector() {
+    final theme = Theme.of(context);
+    return SizedBox(
+      height: 100,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20.0),
+        itemCount: _categories.length,
+        itemBuilder: (context, index) {
+          var category = _categories[index];
+          bool isSelected = category['name'] == _selectedCategory;
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _searchController.clear();
+                _selectedCategory = isSelected ? null : category['name'];
+              });
+            },
+            child: Container(
+              width: 90,
+              margin: const EdgeInsets.only(right: 12.0),
+              decoration: BoxDecoration(
+                color: isSelected ? theme.colorScheme.primary : theme.cardColor,
+                borderRadius: BorderRadius.circular(15),
+                border: isSelected ? null : Border.all(color: theme.dividerColor, width: 1),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Image.asset(category['image']!, height: 50, width: 50, color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.primary, colorBlendMode: BlendMode.srcIn),
+                  const SizedBox(height: 8),
+                  Text(category['name']!, style: theme.textTheme.bodySmall?.copyWith(color: isSelected ? theme.colorScheme.onPrimary : theme.textTheme.bodyLarge?.color, fontWeight: FontWeight.bold), textAlign: TextAlign.center,),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildEventCard(DocumentSnapshot ds, {required bool isFavorite, required bool isFeatured}) {
+    var data = ds.data() as Map<String, dynamic>;
+    final theme = Theme.of(context);
+
+    if (isFeatured) {
+      return Container(
+        width: MediaQuery.of(context).size.width * 0.65,
+        margin: const EdgeInsets.only(right: 16.0),
+        child: GestureDetector(
+          onTap: () => _navigateToDetail(ds.id, data),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
+                alignment: Alignment.topRight,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(15.0),
+                    child: CachedNetworkImage(
+                      imageUrl: data['Image'] ?? '',
+                      height: 130,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => _buildShimmerImage(true),
+                      errorWidget: (context, url, error) => _buildErrorImage(130),
+                    ),
+                  ),
+                  _buildFavoriteButton(isFavorite, () => _toggleFavorite(ds.id)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(data['Name'] ?? 'Event Name', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 5),
+              Text(data['Location'] ?? 'No location', style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor), maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    // List view card
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: GestureDetector(
+        onTap: () => _navigateToDetail(ds.id, data),
+        child: Card(
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            children: [
+              CachedNetworkImage(
+                imageUrl: data['Image'] ?? '',
+                height: 110,
+                width: 110,
+                fit: BoxFit.cover,
+                 placeholder: (context, url) => _buildShimmerImage(false, width: 110, height: 110),
+                 errorWidget: (context, url, error) => _buildErrorImage(110, width: 110),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(data['Name'] ?? 'Event Name', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 8),
+                      Text(data['Location'] ?? 'No location', style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 8),
+                      if (_currentPosition != null && data['latitude'] is num && data['longitude'] is num) ...[
+                        Row(
+                          children: [
+                             Icon(Icons.location_on_outlined, size: 14, color: theme.hintColor),
+                             const SizedBox(width: 4),
+                             Text('${(Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, (data['latitude'] as num).toDouble(), (data['longitude'] as num).toDouble())/1000).toStringAsFixed(1)} km away', style: TextStyle(color: theme.hintColor, fontSize: 12)),
+                          ],
+                        ),
+                      ]
+                    ],
+                  ),
+                ),
+              ),
+               IconButton(
+                padding: const EdgeInsets.only(right: 8.0),
+                icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: isFavorite ? theme.colorScheme.primary : theme.hintColor, size: 28),
+                onPressed: () => _toggleFavorite(ds.id),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+  
+  Widget _buildFavoriteButton(bool isFavorite, VoidCallback onPressed) {
+     return Card(
+      elevation: 2,
+      color: Theme.of(context).cardColor.withOpacity(0.6),
+      margin: const EdgeInsets.all(6),
+      shape: const CircleBorder(),
+      child: IconButton(
+        iconSize: 20,
+        constraints: const BoxConstraints(),
+        padding: const EdgeInsets.all(4),
+        splashRadius: 20,
+        icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: isFavorite ? Theme.of(context).colorScheme.primary : Theme.of(context).textTheme.bodyLarge?.color),
+        onPressed: onPressed,
+      ),
+    );
+  }
+
+  void _navigateToDetail(String id, Map<String, dynamic> data) {
+     Navigator.push(context, MaterialPageRoute(builder: (context) => DetailPage(
+        id: id,
+        image: data['Image'] ?? '',
+        name: data['Name'] ?? 'Untitled Event',
+        date: data['Date'] != null ? DateFormat('yyyy-MM-dd').format((data['Date'] as Timestamp).toDate()) : '',
+        location: data['Location'] ?? 'No location specified',
+        detail: data['Detail'] ?? 'No details available',
+        time: data['Time'] ?? 'No time specified',
+      )));
+  }
+
+  Widget _buildHorizontalShimmer() {
+    return SizedBox(
+      height: 225,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20.0),
+        itemCount: 3,
+        itemBuilder: (context, index) => _buildShimmerImage(true),
+      ),
+    );
+  }
+
+  Widget _buildVerticalShimmer() {
+    return ListView.builder(
+      itemCount: 5,
+      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+      itemBuilder: (context, index) => _buildShimmerImage(false),
+    );
+  }
+
+  Widget _buildShimmerImage(bool isCard, {double width = 0, double height = 130}) {
+    final theme = Theme.of(context);
+    final baseColor = theme.brightness == Brightness.dark ? Colors.grey[800]! : Colors.grey[300]!;
+    final highlightColor = theme.brightness == Brightness.dark ? Colors.grey[700]! : Colors.grey[100]!;
+    final itemWidth = width > 0 ? width : MediaQuery.of(context).size.width * 0.65;
+
+    return Shimmer.fromColors(
+      baseColor: baseColor,
+      highlightColor: highlightColor,
+      child: isCard
+          ? Container(
+              width: itemWidth,
+              margin: const EdgeInsets.only(right: 16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(height: height, width: double.infinity, decoration: BoxDecoration(color: baseColor, borderRadius: BorderRadius.circular(15.0))),
+                  const SizedBox(height: 10),
+                  Container(height: 18, width: itemWidth * 0.8, color: baseColor),
+                  const SizedBox(height: 5),
+                  Container(height: 14, width: itemWidth * 0.6, color: baseColor),
+                ],
+              ),
+            )
+          : Container(
+              margin: const EdgeInsets.only(bottom: 12.0),
+              child: Card(
+                 child: Row(
+                  children: [
+                    Container(height: 110, width: 110, color: baseColor),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(height: 16, width: double.infinity, color: baseColor),
+                          const SizedBox(height: 8),
+                           Container(height: 14, width: double.infinity, color: baseColor),
+                          const SizedBox(height: 8),
+                          Container(height: 12, width: 100, color: baseColor),
+                        ],
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildErrorImage(double height, {double width = double.infinity}) {
+    final theme = Theme.of(context);
+    return Container(
+      height: height, 
+      width: width,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceVariant,
+        borderRadius: BorderRadius.circular(15.0),
+      ), 
+      child: Icon(Icons.broken_image, color: theme.colorScheme.onSurfaceVariant, size: 40)
+    );
+  }
 }
 
 class AnimatedSearchBar extends StatefulWidget {
-  final TextEditingController searchController;
+   final TextEditingController searchController;
   final List<String> hintTexts;
 
-  const AnimatedSearchBar({
-    Key? key,
-    required this.searchController,
-    required this.hintTexts,
-  }) : super(key: key);
+  const AnimatedSearchBar({Key? key, required this.searchController, required this.hintTexts}) : super(key: key);
 
   @override
   _AnimatedSearchBarState createState() => _AnimatedSearchBarState();
@@ -480,7 +617,6 @@ class _AnimatedSearchBarState extends State<AnimatedSearchBar> {
   final _typingSpeed = const Duration(milliseconds: 150);
   final _deleteSpeed = const Duration(milliseconds: 100);
   final _delayBetweenHints = const Duration(seconds: 2);
-
   bool _showCursor = true;
   Timer? _cursorTimer;
 
@@ -489,28 +625,23 @@ class _AnimatedSearchBarState extends State<AnimatedSearchBar> {
     super.initState();
     widget.searchController.addListener(_onSearchChanged);
     _cursorTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (mounted) {
-        setState(() {
-          _showCursor = !_showCursor;
-        });
-      }
+      if (mounted) setState(() => _showCursor = !_showCursor);
     });
     _startTypingAnimation();
   }
 
   void _onSearchChanged() {
     if (mounted) {
-      setState(() {}); // Update suffix icon
+      setState(() {});
       if (widget.searchController.text.isNotEmpty) {
         _typingTimer?.cancel();
-      } else if (widget.searchController.text.isEmpty && !(_typingTimer?.isActive ?? false)) {
+      } else if (!(_typingTimer?.isActive ?? false)) {
         _startTypingAnimation();
       }
     }
   }
 
   void _startTypingAnimation() {
-    _typingTimer?.cancel();
     _typingTimer = Timer.periodic(_isDeleting ? _deleteSpeed : _typingSpeed, (timer) {
       if (!mounted || widget.searchController.text.isNotEmpty) {
         timer.cancel();
@@ -552,27 +683,21 @@ class _AnimatedSearchBarState extends State<AnimatedSearchBar> {
     super.dispose();
   }
 
-  @override
+ @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final bool hasText = widget.searchController.text.isNotEmpty;
-
     return Container(
-      decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(13)),
+      decoration: BoxDecoration(color: theme.cardColor, borderRadius: BorderRadius.circular(13), border: Border.all(color: theme.dividerColor, width: 1)),
       child: TextField(
         controller: widget.searchController,
         decoration: InputDecoration(
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 15.0, vertical: 12.0),
-          hintText: hasText ? null : _currentHintText + (_showCursor ? '|' : ''),
+          hintText: hasText ? '' : _currentHintText + (_showCursor && !_isDeleting ? '|' : ''),
           suffixIcon: hasText
-              ? IconButton(
-                  icon: const Icon(Icons.close),
-                  color: Colors.grey,
-                  onPressed: () {
-                    widget.searchController.clear();
-                  },
-                )
-              : const Icon(Icons.search_outlined, color: Colors.grey),
+              ? IconButton(icon: Icon(Icons.close, color: theme.hintColor), onPressed: () => widget.searchController.clear())
+              : Icon(Icons.search_outlined, color: theme.hintColor),
         ),
       ),
     );

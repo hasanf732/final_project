@@ -1,6 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:final_project/Pages/detail_page.dart';
+import 'package:final_project/Pages/qr_display_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -97,18 +97,21 @@ class _BookingState extends State<Booking> {
               }
               return GestureDetector(
                 onTap: () {
-                  Navigator.push(
+                  final user = FirebaseAuth.instance.currentUser;
+                  if (user != null) {
+                    String qrData = "${user.uid}_${event['id']}";
+                    Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (context) => DetailPage(
-                                id: event['id'],
-                                image: event['Image'] ?? '',
-                                name: event['Name'] ?? 'Untitled Event',
-                                date: eventDateStr,
-                                location: event['Location'] ?? 'No location specified',
-                                detail: event['Detail'] ?? 'No details available',
-                                time: event['Time'] ?? 'No time specified',
-                              )));
+                        builder: (context) => QrDisplayPage(
+                          qrData: qrData,
+                          eventName: event['Name'] ?? 'Untitled Event',
+                          eventDate: eventDateStr,
+                          eventLocation: event['Location'] ?? 'No location specified',
+                        ),
+                      ),
+                    );
+                  }
                 },
                 child: Card(
                   child: Padding(

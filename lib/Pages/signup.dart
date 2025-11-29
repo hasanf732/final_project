@@ -123,22 +123,11 @@ class _SignupState extends State<Signup> {
           _passwordController.text.trim(),
         );
       } else {
-        UserCredential userCredential = await AuthMethods().signUpWithEmailAndPassword(
+        await AuthMethods().signUpWithEmailAndPassword(
           _emailController.text.trim(),
           _passwordController.text.trim(),
+          _nameController.text.trim(),
         );
-
-        User? user = userCredential.user;
-        if (user != null) {
-          Map<String, dynamic> userInfoMap = {
-            "Name": _nameController.text,
-            "Email": _emailController.text,
-            "Major": _majorController.text.trim(),
-            "Id": user.uid,
-            'lastSignInTime': FieldValue.serverTimestamp(),
-          };
-          await DatabaseMethods().addUserInfo(userInfoMap, user.uid);
-        }
       }
     } on FirebaseAuthException catch (e) {
       _handleAuthError(e);

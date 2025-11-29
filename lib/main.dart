@@ -16,19 +16,21 @@ void main() async {
   // Initialize the Google Maps renderer before the app starts.
   final GoogleMapsFlutterPlatform mapsImplementation = GoogleMapsFlutterPlatform.instance;
   if (mapsImplementation is GoogleMapsFlutterAndroid) {
-    mapsImplementation.useAndroidViewSurface = true;
     try {
       await mapsImplementation.initializeWithRenderer(AndroidMapRenderer.latest);
     } on PlatformException catch (e) {
-      // On hot restart, the renderer may already be initialized.
-      // This is not a fatal error, so we can ignore it. For any other
-      // exception, we fall back to the legacy renderer.
-      if (e.code != 'Renderer already initialized') {
-         print("Failed to initialize with latest renderer: $e. Falling back to legacy.");
-         await mapsImplementation.initializeWithRenderer(AndroidMapRenderer.legacy);
+      if (e.code == 'Renderer already initialized') {
+        print('Google Maps renderer already initialized. Ignoring on hot restart.');
       } else {
-        print("Google Maps renderer already initialized. Ignoring on hot restart.");
+        print('Failed to initialize with latest renderer: $e. Falling back to legacy.');
+        try {
+          await mapsImplementation.initializeWithRenderer(AndroidMapRenderer.legacy);
+        } on PlatformException catch (e2) {
+          print('Failed to initialize with legacy renderer: $e2');
+        }
       }
+    } catch (e) {
+      print('An unexpected error occurred during map renderer initialization: $e');
     }
   }
 
