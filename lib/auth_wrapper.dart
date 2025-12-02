@@ -40,20 +40,15 @@ class RoleBasedRedirect extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
-        if (snapshot.hasError) {
-          // Handle error, maybe navigate to a generic user page or show an error
-          return const MainPage(); 
-        }
 
-        if (snapshot.data == true) {
-          // User is an admin
+        // Default to non-admin view unless explicitly identified as an admin.
+        if (snapshot.hasData && snapshot.data == true) {
           return const AdminPage();
         } else {
-          // User is not an admin
+          // This covers non-admin users, errors, or null data.
           return const MainPage();
         }
       },
     );
   }
 }
-

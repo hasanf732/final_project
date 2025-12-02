@@ -10,6 +10,7 @@ import 'package:google_maps_cluster_manager_2/google_maps_cluster_manager_2.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 
+
 class Place with cluster_manager.ClusterItem {
   final String id;
   final String name;
@@ -46,8 +47,6 @@ class _MapPageState extends State<MapPage> {
   Position? _currentPosition;
   final Map<String, BitmapDescriptor> _markerBitmaps = {};
   List<Place> _selectedClusterPlaces = [];
-  String? _mapStyle;
-  Brightness? _currentBrightness;
 
   @override
   void initState() {
@@ -55,34 +54,6 @@ class _MapPageState extends State<MapPage> {
     _manager = _initClusterManager();
     _fetchEventLocations();
     _getCurrentLocation();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _updateMapStyle();
-  }
-
-  Future<void> _updateMapStyle() async {
-    final newBrightness = Theme.of(context).brightness;
-    if (_currentBrightness != newBrightness) {
-      _currentBrightness = newBrightness;
-      final style = await _loadMapStyle(newBrightness);
-      if (_controller.isCompleted) {
-        final controller = await _controller.future;
-        await controller.setMapStyle(style);
-      }
-      if (mounted) {
-        setState(() {
-          _mapStyle = style;
-        });
-      }
-    }
-  }
-
-  Future<String> _loadMapStyle(Brightness brightness) async {
-    return await rootBundle.loadString(
-        brightness == Brightness.dark ? 'Images/map_style_dark.json' : 'Images/map_style.json');
   }
 
   cluster_manager.ClusterManager _initClusterManager() {
@@ -157,6 +128,7 @@ class _MapPageState extends State<MapPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final bottomPadding = MediaQuery.of(context).padding.bottom + 80;
 
     return Scaffold(
@@ -169,31 +141,29 @@ class _MapPageState extends State<MapPage> {
       ),
       body: Stack(
         children: [
-          _mapStyle == null
-              ? const Center(child: CircularProgressIndicator())
-              : GoogleMap(
-                  mapType: MapType.normal,
-                  onMapCreated: (GoogleMapController controller) {
-                    _controller.complete(controller);
-                    controller.setMapStyle(_mapStyle);
-                    _manager.setMapId(controller.mapId);
-                  },
-                  initialCameraPosition: CameraPosition(
-                    target: _currentPosition != null
-                        ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
-                        : const LatLng(26.2285, 50.5860),
-                    zoom: 12.0,
-                  ),
-                  markers: _markers,
-                  myLocationEnabled: true,
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
-                  zoomGesturesEnabled: true,
-                  mapToolbarEnabled: false,
-                  onCameraMove: _manager.onCameraMove,
-                  onCameraIdle: _manager.updateMap,
-                  onTap: (_) => setState(() => _selectedClusterPlaces.clear()),
-                ),
+          GoogleMap(
+            mapType: MapType.normal,
+            onMapCreated: (GoogleMapController controller) {
+              _controller.complete(controller);
+              controller.setMapStyle(isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle);
+              _manager.setMapId(controller.mapId);
+            },
+            initialCameraPosition: CameraPosition(
+              target: _currentPosition != null
+                  ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
+                  : const LatLng(26.2285, 50.5860),
+              zoom: 12.0,
+            ),
+            markers: _markers,
+            myLocationEnabled: true,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            zoomGesturesEnabled: true,
+            mapToolbarEnabled: false,
+            onCameraMove: _manager.onCameraMove,
+            onCameraIdle: _manager.updateMap,
+            onTap: (_) => setState(() => _selectedClusterPlaces.clear()),
+          ),
           if (_selectedClusterPlaces.isNotEmpty) _buildEventCarousel(bottomPadding),
         ],
       ),

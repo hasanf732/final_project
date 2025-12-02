@@ -264,8 +264,8 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
               scale: _scaleAnimation,
               child: IconButton(
                 icon: Icon(
-                  _isFavorite ? Icons.favorite : Icons.favorite_border,
-                  color: _isFavorite ? Colors.red : theme.colorScheme.onSurface,
+                  _isFavorite ? Icons.bookmark : Icons.bookmark_border,
+                  color: _isFavorite ? theme.colorScheme.primary : theme.colorScheme.onSurface,
                 ),
                 onPressed: _toggleFavorite,
               ),

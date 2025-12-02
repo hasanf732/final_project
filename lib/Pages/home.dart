@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:final_project/Pages/detail_page.dart';
 import 'package:final_project/Pages/booking.dart';
+import 'package:final_project/Pages/favorites_page.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/services/database.dart';
@@ -203,7 +204,7 @@ class _HomeState extends State<Home> {
             actions: [
               IconButton(
                 icon: Icon(Icons.bookmarks, color: theme.colorScheme.primary, size: 28),
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const Booking())),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const FavoritesPage())),
               ),
             ],
           ),
