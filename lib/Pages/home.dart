@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:final_project/Pages/detail_page.dart';
-import 'package:final_project/Pages/favorites_page.dart';
+import 'package:final_project/Pages/booking.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/services/database.dart';
@@ -21,9 +21,17 @@ class _HomeState extends State<Home> {
   String? _selectedCategory;
   String _userName = "";
   Position? _currentPosition;
-  Set<String> _favoriteEventIds = {};
-  StreamSubscription? _favoritesSubscription;
+  Set<String> _bookmarkedEventIds = {};
+  Set<String> _bookedEventIds = {};
+  Set<String> _attendedEventIds = {};
+
+  StreamSubscription? _bookmarksSubscription;
   StreamSubscription? _positionStreamSubscription;
+  StreamSubscription? _userEventsSubscription;
+
+  Stream<List<DocumentSnapshot>>? _hotEventsStream;
+  Stream<List<DocumentSnapshot>>? _topRatedEventsStream;
+  Stream<List<DocumentSnapshot>>? _nearestEventsStream;
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
@@ -56,15 +64,24 @@ class _HomeState extends State<Home> {
   @override
   void dispose() {
     _searchController.dispose();
-    _favoritesSubscription?.cancel();
+    _bookmarksSubscription?.cancel();
     _positionStreamSubscription?.cancel();
+    _userEventsSubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _loadInitialData() async {
     await _loadUserData();
-    _listenToFavorites();
+    _listenToBookmarks();
     _listenToLocationUpdates();
+    _listenToUserEvents();
+    _initializeStreams();
+  }
+
+  void _initializeStreams() {
+    _hotEventsStream = hotEventsStream();
+    _topRatedEventsStream = topRatedEventsStream();
+    _nearestEventsStream = nearestEventsStream();
   }
 
   Future<void> _loadUserData() async {
@@ -84,10 +101,10 @@ class _HomeState extends State<Home> {
     }
   }
 
-  void _listenToFavorites() {
+  void _listenToBookmarks() {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      _favoritesSubscription = FirebaseFirestore.instance
+      _bookmarksSubscription = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .snapshots()
@@ -96,9 +113,26 @@ class _HomeState extends State<Home> {
           final favs = List<String>.from(userDoc.data()!['favoriteEvents']);
           if (mounted) {
             setState(() {
-              _favoriteEventIds = favs.toSet();
+              _bookmarkedEventIds = favs.toSet();
             });
           }
+        }
+      });
+    }
+  }
+
+  void _listenToUserEvents() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _userEventsSubscription = DatabaseMethods().getUserStream(user.uid).listen((userDoc) {
+        if (mounted && userDoc.exists) {
+          final data = userDoc.data() as Map<String, dynamic>;
+          final booked = data.containsKey('bookedEvents') ? List<dynamic>.from(data['bookedEvents']) : [];
+          final attended = data.containsKey('attendedEvents') ? List<dynamic>.from(data['attendedEvents']) : [];
+          setState(() {
+            _bookedEventIds = booked.map((e) => e.toString()).toSet();
+            _attendedEventIds = attended.map((e) => e.toString()).toSet();
+          });
         }
       });
     }
@@ -139,13 +173,13 @@ class _HomeState extends State<Home> {
     }
   }
 
-  void _toggleFavorite(String eventId) {
+  void _toggleBookmark(String eventId) {
     setState(() {
-      if (_favoriteEventIds.contains(eventId)) {
-        _favoriteEventIds.remove(eventId);
+      if (_bookmarkedEventIds.contains(eventId)) {
+        _bookmarkedEventIds.remove(eventId);
         DatabaseMethods().removeFromFavorites(eventId);
       } else {
-        _favoriteEventIds.add(eventId);
+        _bookmarkedEventIds.add(eventId);
         DatabaseMethods().addToFavorites(eventId);
       }
     });
@@ -168,8 +202,8 @@ class _HomeState extends State<Home> {
             title: Text("Hello, ${_userName.isNotEmpty ? _userName : 'User'}!"),
             actions: [
               IconButton(
-                icon: Icon(Icons.favorite, color: theme.colorScheme.primary, size: 28),
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const FavoritesPage())),
+                icon: Icon(Icons.bookmarks, color: theme.colorScheme.primary, size: 28),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const Booking())),
               ),
             ],
           ),
@@ -189,11 +223,11 @@ class _HomeState extends State<Home> {
             _buildFilteredList()
           else ...[
             _buildSectionHeader("What's Hot 🔥"),
-            _buildHorizontalEventsList(hotEventsStream()),
+            _buildHorizontalEventsList(_hotEventsStream),
             _buildSectionHeader("Top Rated ⭐"),
-            _buildHorizontalEventsList(topRatedEventsStream()),
+            _buildHorizontalEventsList(_topRatedEventsStream),
             _buildSectionHeader("Nearest To You 📍"),
-            _buildVerticalEventsList(nearestEventsStream()),
+            _buildVerticalEventsList(_nearestEventsStream),
           ],
         ],
       ),
@@ -221,44 +255,49 @@ class _HomeState extends State<Home> {
   }
 
   Stream<List<DocumentSnapshot>> topRatedEventsStream() {
-    return FirebaseFirestore.instance
-        .collection('News')
-        .snapshots()
-        .map((snapshot) {
-          var docs = snapshot.docs.where((doc) => (doc.data() as Map<String, dynamic>).containsKey('ratings')).toList();
-          docs.sort((a, b) {
-            var aData = a.data() as Map<String, dynamic>;
-            var bData = b.data() as Map<String, dynamic>;
-            double aAvg = _calculateAverageRating(aData['ratings']);
-            double bAvg = _calculateAverageRating(bData['ratings']);
-            return bAvg.compareTo(aAvg);
-          });
-          return docs.take(7).toList();
-        });
+    return FirebaseFirestore.instance.collection('News').snapshots().map((snapshot) {
+      var docsWithRatings = snapshot.docs
+          .map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final double avgRating = _calculateAverageRating(data['ratings']);
+            return MapEntry(doc, avgRating);
+          })
+          .where((entry) => entry.value > 0)
+          .toList();
+
+      docsWithRatings.sort((a, b) => b.value.compareTo(a.value));
+
+      return docsWithRatings.map((entry) => entry.key).take(7).toList();
+    });
   }
 
   Stream<List<DocumentSnapshot>> nearestEventsStream() {
-     return FirebaseFirestore.instance
-        .collection('News')
-        .snapshots()
-        .map((snapshot) {
+    return FirebaseFirestore.instance.collection('News').snapshots().map((snapshot) {
       if (_currentPosition == null) return [];
-      var docs = snapshot.docs;
-      docs.sort((a, b) {
-         var posA = a.data() as Map<String, dynamic>;
-         var posB = b.data() as Map<String, dynamic>;
-         var latA = posA['latitude'];
-         var lonA = posA['longitude'];
-         var latB = posB['latitude'];
-         var lonB = posB['longitude'];
-         if (latA is! num || lonA is! num || latB is! num || lonB is! num) return 0;
-         double distanceA = Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, latA.toDouble(), lonA.toDouble());
-         double distanceB = Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, latB.toDouble(), lonB.toDouble());
-         return distanceA.compareTo(distanceB);
-      });
-      return docs.take(10).toList();
+
+      var docsWithDistances = snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        final lat = data['latitude'];
+        final lon = data['longitude'];
+
+        if (lat is num && lon is num) {
+          final distance = Geolocator.distanceBetween(
+            _currentPosition!.latitude,
+            _currentPosition!.longitude,
+            lat.toDouble(),
+            lon.toDouble(),
+          );
+          return MapEntry(doc, distance);
+        }
+        return null;
+      }).where((entry) => entry != null).cast<MapEntry<DocumentSnapshot, double>>().toList();
+
+      docsWithDistances.sort((a, b) => a.value.compareTo(b.value));
+
+      return docsWithDistances.map((entry) => entry.key).take(2).toList();
     });
   }
+
 
   double _calculateAverageRating(Map<String, dynamic>? ratings) {
     if (ratings == null || ratings.isEmpty) return 0.0;
@@ -278,7 +317,8 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Widget _buildHorizontalEventsList(Stream<List<DocumentSnapshot>> stream) {
+  Widget _buildHorizontalEventsList(Stream<List<DocumentSnapshot>>? stream) {
+    if (stream == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
     return SliverToBoxAdapter(
       child: StreamBuilder<List<DocumentSnapshot>>(
         stream: stream,
@@ -294,7 +334,7 @@ class _HomeState extends State<Home> {
               itemCount: snapshot.data!.length,
               itemBuilder: (context, index) {
                 final event = snapshot.data![index];
-                return _buildEventCard(event, isFavorite: _favoriteEventIds.contains(event.id), isFeatured: true);
+                return _buildEventCard(event, isBookmarked: _bookmarkedEventIds.contains(event.id), isFeatured: true);
               },
             ),
           );
@@ -303,7 +343,8 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Widget _buildVerticalEventsList(Stream<List<DocumentSnapshot>> stream) {
+  Widget _buildVerticalEventsList(Stream<List<DocumentSnapshot>>? stream) {
+    if (stream == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
     return StreamBuilder<List<DocumentSnapshot>>(
       stream: stream,
       builder: (context, snapshot) {
@@ -315,7 +356,7 @@ class _HomeState extends State<Home> {
           final event = snapshot.data![index];
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20.0),
-            child: _buildEventCard(event, isFavorite: _favoriteEventIds.contains(event.id), isFeatured: false),
+            child: _buildEventCard(event, isBookmarked: _bookmarkedEventIds.contains(event.id), isFeatured: false),
           );
         }, childCount: snapshot.data!.length));
       },
@@ -346,7 +387,7 @@ class _HomeState extends State<Home> {
             final event = eventDocs[index];
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20.0),
-              child: _buildEventCard(event, isFavorite: _favoriteEventIds.contains(event.id), isFeatured: false),
+              child: _buildEventCard(event, isBookmarked: _bookmarkedEventIds.contains(event.id), isFeatured: false),
             );
         }, childCount: eventDocs.length));
       },
@@ -382,9 +423,23 @@ class _HomeState extends State<Home> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Image.asset(category['image']!, height: 50, width: 50, color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.primary, colorBlendMode: BlendMode.srcIn),
-                  const SizedBox(height: 8),
-                  Text(category['name']!, style: theme.textTheme.bodySmall?.copyWith(color: isSelected ? theme.colorScheme.onPrimary : theme.textTheme.bodyLarge?.color, fontWeight: FontWeight.bold), textAlign: TextAlign.center,),
+                  Image.asset(category['image']!, height: 40, width: 40, color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.primary, colorBlendMode: BlendMode.srcIn),
+                  const SizedBox(height: 4),
+                   Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                      child: Text(
+                        category['name']!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: isSelected ? theme.colorScheme.onPrimary : theme.textTheme.bodyLarge?.color,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -394,9 +449,13 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Widget _buildEventCard(DocumentSnapshot ds, {required bool isFavorite, required bool isFeatured}) {
+  Widget _buildEventCard(DocumentSnapshot ds, {required bool isBookmarked, required bool isFeatured}) {
     var data = ds.data() as Map<String, dynamic>;
     final theme = Theme.of(context);
+    final int imageCacheSize = (MediaQuery.of(context).size.width * 0.4).round();
+
+    final bool isAttended = _attendedEventIds.contains(ds.id);
+    final bool isRegistered = _bookedEventIds.contains(ds.id);
 
     if (isFeatured) {
       return Container(
@@ -408,12 +467,14 @@ class _HomeState extends State<Home> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Stack(
-                alignment: Alignment.topRight,
+                alignment: Alignment.topLeft,
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(15.0),
                     child: CachedNetworkImage(
                       imageUrl: data['Image'] ?? '',
+                      memCacheHeight: imageCacheSize,
+                      memCacheWidth: imageCacheSize,
                       height: 130,
                       width: double.infinity,
                       fit: BoxFit.cover,
@@ -421,7 +482,16 @@ class _HomeState extends State<Home> {
                       errorWidget: (context, url, error) => _buildErrorImage(130),
                     ),
                   ),
-                  _buildFavoriteButton(isFavorite, () => _toggleFavorite(ds.id)),
+                  if (isAttended)
+                    _buildStatusBadge('Attended', theme.colorScheme.secondary)
+                  else if (isRegistered)
+                    _buildStatusBadge('Registered', theme.colorScheme.primary),
+
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: _buildBookmarkButton(isBookmarked, () => _toggleBookmark(ds.id)),
+                  )
                 ],
               ),
               const SizedBox(height: 10),
@@ -445,6 +515,8 @@ class _HomeState extends State<Home> {
             children: [
               CachedNetworkImage(
                 imageUrl: data['Image'] ?? '',
+                memCacheHeight: imageCacheSize,
+                memCacheWidth: imageCacheSize,
                 height: 110,
                 width: 110,
                 fit: BoxFit.cover,
@@ -461,6 +533,10 @@ class _HomeState extends State<Home> {
                       const SizedBox(height: 8),
                       Text(data['Location'] ?? 'No location', style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor), maxLines: 1, overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 8),
+                      if (isAttended)
+                        _buildStatusBadge('Attended', theme.colorScheme.secondary)
+                      else if (isRegistered)
+                        _buildStatusBadge('Registered', theme.colorScheme.primary),
                       if (_currentPosition != null && data['latitude'] is num && data['longitude'] is num) ...[
                         Row(
                           children: [
@@ -476,8 +552,8 @@ class _HomeState extends State<Home> {
               ),
                IconButton(
                 padding: const EdgeInsets.only(right: 8.0),
-                icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: isFavorite ? theme.colorScheme.primary : theme.hintColor, size: 28),
-                onPressed: () => _toggleFavorite(ds.id),
+                icon: Icon(isBookmarked ? Icons.bookmark : Icons.bookmark_border, color: theme.colorScheme.primary, size: 28),
+                onPressed: () => _toggleBookmark(ds.id),
               ),
             ],
           ),
@@ -486,7 +562,7 @@ class _HomeState extends State<Home> {
     );
   }
   
-  Widget _buildFavoriteButton(bool isFavorite, VoidCallback onPressed) {
+  Widget _buildBookmarkButton(bool isBookmarked, VoidCallback onPressed) {
      return Card(
       elevation: 2,
       color: Theme.of(context).cardColor.withOpacity(0.6),
@@ -497,11 +573,27 @@ class _HomeState extends State<Home> {
         constraints: const BoxConstraints(),
         padding: const EdgeInsets.all(4),
         splashRadius: 20,
-        icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: isFavorite ? Theme.of(context).colorScheme.primary : Theme.of(context).textTheme.bodyLarge?.color),
+        icon: Icon(isBookmarked ? Icons.bookmark : Icons.bookmark_border, color: Theme.of(context).colorScheme.primary),
         onPressed: onPressed,
       ),
     );
   }
+
+  Widget _buildStatusBadge(String status, Color color) {
+    return Container(
+      margin: const EdgeInsets.all(6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        status,
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
+      ),
+    );
+  }
+
 
   void _navigateToDetail(String id, Map<String, dynamic> data) {
      Navigator.push(context, MaterialPageRoute(builder: (context) => DetailPage(

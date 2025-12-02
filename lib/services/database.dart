@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -12,10 +12,10 @@ class DatabaseMethods {
   }
 
   Future<void> addNews(
-      File imageFile, String name, String detail, String location, double latitude, double longitude, DateTime dateTime) async {
+      Uint8List imageBytes, String name, String detail, String location, double latitude, double longitude, DateTime dateTime, String category) async {
     String fileName = 'event_images/${DateTime.now().millisecondsSinceEpoch}.png';
     Reference storageRef = FirebaseStorage.instance.ref().child(fileName);
-    UploadTask uploadTask = storageRef.putFile(imageFile);
+    UploadTask uploadTask = storageRef.putData(imageBytes);
     TaskSnapshot taskSnapshot = await uploadTask;
     String imageUrl = await taskSnapshot.ref.getDownloadURL();
 
@@ -28,6 +28,7 @@ class DatabaseMethods {
       'Date': Timestamp.fromDate(dateTime),
       'Image': imageUrl,
       'createdAt': FieldValue.serverTimestamp(),
+      'Category': category,
     };
 
     await _firestore.collection("News").add(eventData);
@@ -37,11 +38,38 @@ class DatabaseMethods {
     return _firestore.collection("News").snapshots();
   }
 
-  Future<int> getRegistrationCount(String eventId) async {
-    QuerySnapshot snapshot =
-        await _firestore.collection("users").where("bookedEvents", arrayContains: eventId).get();
-    return snapshot.docs.length;
+  Stream<Map<String, int>> getEventRegistrationCounts() {
+    return _firestore.collection("users").snapshots().map((snapshot) {
+      final counts = <String, int>{};
+      for (var userDoc in snapshot.docs) {
+        final data = userDoc.data();
+        if (data.containsKey('bookedEvents')) {
+          final bookedEvents = List<String>.from(data['bookedEvents']);
+          for (var eventId in bookedEvents) {
+            counts[eventId] = (counts[eventId] ?? 0) + 1;
+          }
+        }
+      }
+      return counts;
+    });
   }
+
+  Stream<Map<String, int>> getEventAttendanceCounts() {
+    return _firestore.collection("users").snapshots().map((snapshot) {
+      final counts = <String, int>{};
+      for (var userDoc in snapshot.docs) {
+        final data = userDoc.data();
+        if (data.containsKey('attendedEvents')) {
+          final attendedEvents = List<String>.from(data['attendedEvents']);
+          for (var eventId in attendedEvents) {
+            counts[eventId] = (counts[eventId] ?? 0) + 1;
+          }
+        }
+      }
+      return counts;
+    });
+  }
+
 
   Future<void> addReview(String eventId, double rating, String reviewText) async {
     final user = _auth.currentUser;
@@ -67,6 +95,17 @@ class DatabaseMethods {
     await userRef.update({
       'bookedEvents': FieldValue.arrayUnion([eventId])
     });
+  }
+
+  Future<void> markUserAsAttended(String userId, String eventId) async {
+    final userRef = _firestore.collection('users').doc(userId);
+    await userRef.update({
+      'attendedEvents': FieldValue.arrayUnion([eventId])
+    });
+  }
+
+  Stream<DocumentSnapshot> getUserStream(String uid) {
+    return _firestore.collection('users').doc(uid).snapshots();
   }
 
   Future<bool> isFavorite(String eventId) async {

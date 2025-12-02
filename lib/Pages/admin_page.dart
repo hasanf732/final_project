@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/Pages/location_picker_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -72,11 +74,14 @@ class _CreateEventTabState extends State<CreateEventTab> {
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
 
-  File? _selectedImage;
+  Uint8List? _selectedImageBytes;
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   LatLng? _pickedLocation;
+  String? _selectedCategory;
   bool _isLoading = false;
+
+  final List<String> _categories = ['Music', 'Media', 'Sport', 'Astro', 'Art', 'Film', 'Volunteer', 'Cyber'];
 
   @override
   void dispose() {
@@ -91,9 +96,18 @@ class _CreateEventTabState extends State<CreateEventTab> {
   Future<void> _pickImage() async {
     final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
-      setState(() {
-        _selectedImage = File(pickedFile.path);
-      });
+      final file = File(pickedFile.path);
+      final compressedBytes = await FlutterImageCompress.compressWithFile(
+        file.absolute.path,
+        quality: 85,
+        minWidth: 1024,
+        minHeight: 768,
+      );
+      if (compressedBytes != null) {
+        setState(() {
+          _selectedImageBytes = compressedBytes;
+        });
+      }
     }
   }
 
@@ -142,10 +156,11 @@ class _CreateEventTabState extends State<CreateEventTab> {
   Future<void> _submitEvent() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_selectedImage == null ||
+    if (_selectedImageBytes == null ||
         _pickedLocation == null ||
         _selectedDate == null ||
-        _selectedTime == null) {
+        _selectedTime == null ||
+        _selectedCategory == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please complete all fields for the event.')),
       );
@@ -166,13 +181,14 @@ class _CreateEventTabState extends State<CreateEventTab> {
       );
 
       await DatabaseMethods().addNews(
-        _selectedImage!,
+        _selectedImageBytes!,
         _nameController.text.trim(),
         _detailController.text.trim(),
         _locationNameController.text.trim(),
         _pickedLocation!.latitude,
         _pickedLocation!.longitude,
         combinedDateTime,
+        _selectedCategory!,
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -180,8 +196,9 @@ class _CreateEventTabState extends State<CreateEventTab> {
       );
       _formKey.currentState?.reset();
       setState(() {
-        _selectedImage = null;
+        _selectedImageBytes = null;
         _pickedLocation = null;
+        _selectedCategory = null;
         _dateController.clear();
         _timeController.clear();
         _nameController.clear();
@@ -214,6 +231,8 @@ class _CreateEventTabState extends State<CreateEventTab> {
           children: [
             _buildImagePicker(theme),
             const SizedBox(height: 20),
+            _buildCategoryDropdown(),
+            const SizedBox(height: 16),
             _buildTextFormField(_nameController, 'Event Name'),
             const SizedBox(height: 16),
             _buildTextFormField(_detailController, 'Event Details', maxLines: 5),
@@ -258,10 +277,10 @@ class _CreateEventTabState extends State<CreateEventTab> {
           borderRadius: BorderRadius.circular(15),
           border: Border.all(color: theme.dividerColor),
         ),
-        child: _selectedImage != null
+        child: _selectedImageBytes != null
             ? ClipRRect(
                 borderRadius: BorderRadius.circular(15),
-                child: Image.file(_selectedImage!, fit: BoxFit.cover),
+                child: Image.memory(_selectedImageBytes!, fit: BoxFit.cover),
               )
             : Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -323,6 +342,28 @@ class _CreateEventTabState extends State<CreateEventTab> {
       },
     );
   }
+
+  Widget _buildCategoryDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _selectedCategory,
+      hint: const Text('Select Category'),
+      onChanged: (String? newValue) {
+        setState(() {
+          _selectedCategory = newValue;
+        });
+      },
+      items: _categories.map<DropdownMenuItem<String>>((String value) {
+        return DropdownMenuItem<String>(
+          value: value,
+          child: Text(value),
+        );
+      }).toList(),
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+      ),
+      validator: (value) => value == null ? 'Please select a category' : null,
+    );
+  }
 }
 
 class EventStatisticsTab extends StatelessWidget {
@@ -330,73 +371,104 @@ class EventStatisticsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: DatabaseMethods().getEventDetails(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+    return StreamBuilder<Map<String, int>>(
+      stream: DatabaseMethods().getEventRegistrationCounts(),
+      builder: (context, regCountSnapshot) {
+        if (regCountSnapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
-          return Center(child: Text("Error: ${snapshot.error}"));
-        }
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text("No events have been created yet."));
+        if (regCountSnapshot.hasError) {
+          return Center(child: Text("Error fetching stats: ${regCountSnapshot.error}"));
         }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(8.0),
-          itemCount: snapshot.data!.docs.length,
-          itemBuilder: (context, index) {
-            var eventDoc = snapshot.data!.docs[index];
-            var eventData = eventDoc.data() as Map<String, dynamic>;
-            var eventName = eventData['Name'] ?? 'Unnamed Event';
-            var ratings = eventData['ratings'] as Map<String, dynamic>? ?? {};
-            double averageRating = 0;
-            if (ratings.isNotEmpty) {
-              averageRating = ratings.values.map((r) => r['rating'] as num).fold(0.0, (prev, element) => prev + element) /
-                  ratings.length;
+        final registrationCounts = regCountSnapshot.data ?? {};
+
+        return StreamBuilder<Map<String, int>>(
+          stream: DatabaseMethods().getEventAttendanceCounts(),
+          builder: (context, attendanceSnapshot) {
+            if (attendanceSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (attendanceSnapshot.hasError) {
+              return Center(child: Text("Error fetching stats: ${attendanceSnapshot.error}"));
             }
 
-            return Card(
-              elevation: 2.0,
-              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(eventName, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    const Divider(),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        FutureBuilder<int>(
-                          future: DatabaseMethods().getRegistrationCount(eventDoc.id),
-                          builder: (context, regSnapshot) {
-                            if (regSnapshot.connectionState == ConnectionState.waiting) {
-                              return const Row(children: [Icon(Icons.people_alt_outlined, size: 16), SizedBox(width: 8), Text('Loading...')]);
-                            }
-                            return Row(children: [
-                              const Icon(Icons.people_alt_outlined, size: 16),
-                              const SizedBox(width: 8),
-                              Text('${regSnapshot.data ?? 0} Registered', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            ]);
-                          },
-                        ),
-                        Row(
+            final attendanceCounts = attendanceSnapshot.data ?? {};
+
+            return StreamBuilder<QuerySnapshot>(
+              stream: DatabaseMethods().getEventDetails(),
+              builder: (context, eventSnapshot) {
+                if (eventSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (eventSnapshot.hasError) {
+                  return Center(child: Text("Error: ${eventSnapshot.error}"));
+                }
+                if (!eventSnapshot.hasData || eventSnapshot.data!.docs.isEmpty) {
+                  return const Center(child: Text("No events have been created yet."));
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(8.0),
+                  itemCount: eventSnapshot.data!.docs.length,
+                  itemBuilder: (context, index) {
+                    var eventDoc = eventSnapshot.data!.docs[index];
+                    var eventData = eventDoc.data() as Map<String, dynamic>;
+                    var eventName = eventData['Name'] ?? 'Unnamed Event';
+                    var ratings = eventData['ratings'] as Map<String, dynamic>? ?? {};
+                    double averageRating = 0;
+                    if (ratings.isNotEmpty) {
+                      averageRating = ratings.values.map((r) => r['rating'] as num).fold(0.0, (prev, element) => prev + element) /
+                          ratings.length;
+                    }
+
+                    final registrationCount = registrationCounts[eventDoc.id] ?? 0;
+                    final attendanceCount = attendanceCounts[eventDoc.id] ?? 0;
+
+                    return Card(
+                      elevation: 2.0,
+                      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.star_border, size: 16),
-                            const SizedBox(width: 8),
-                            Text('${averageRating.toStringAsFixed(1)} (${ratings.length} Reviews)', style: const TextStyle(fontWeight: FontWeight.bold)),
+                            Text(eventName, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 8),
+                            const Divider(),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 12.0,
+                              runSpacing: 4.0,
+                              alignment: WrapAlignment.spaceAround,
+                              children: [
+                                Row(mainAxisSize: MainAxisSize.min, children: [
+                                  const Icon(Icons.people_alt_outlined, size: 16),
+                                  const SizedBox(width: 8),
+                                  Text('$registrationCount Registered', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                ]),
+                                Row(mainAxisSize: MainAxisSize.min, children: [
+                                  const Icon(Icons.check_circle_outline, size: 16),
+                                  const SizedBox(width: 8),
+                                  Text('$attendanceCount Attended', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                ]),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.star_border, size: 16),
+                                    const SizedBox(width: 8),
+                                    Text('${averageRating.toStringAsFixed(1)} (${ratings.length} Reviews)', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ],
                         ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+                      ),
+                    );
+                  },
+                );
+              },
             );
           },
         );
@@ -413,11 +485,20 @@ class ScanQrPage extends StatefulWidget {
 }
 
 class _ScanQrPageState extends State<ScanQrPage> {
+  final MobileScannerController _scannerController = MobileScannerController();
   String? _scannedData;
   bool _isValid = false;
   bool _isProcessing = false;
 
+  @override
+  void dispose() {
+    _scannerController.dispose();
+    super.dispose();
+  }
+
   Future<void> _verifyQrCode(String data) async {
+    if (_isProcessing) return;
+
     setState(() {
       _isProcessing = true;
     });
@@ -448,8 +529,9 @@ class _ScanQrPageState extends State<ScanQrPage> {
       final bookedEvents = List<String>.from(userData['bookedEvents'] ?? []);
 
       if (bookedEvents.contains(eventId)) {
+        await DatabaseMethods().markUserAsAttended(userId, eventId);
         setState(() {
-          _scannedData = "Valid Ticket for ${userData['Name']}";
+          _scannedData = "Valid for ${userData['Name']}";
           _isValid = true;
         });
       } else {
@@ -464,8 +546,14 @@ class _ScanQrPageState extends State<ScanQrPage> {
         _isValid = false;
       });
     } finally {
-      setState(() {
-        _isProcessing = false;
+      // Add a delay before allowing another scan to prevent rapid re-scans
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          setState(() {
+            _isProcessing = false;
+            _scannedData = null;
+          });
+        }
       });
     }
   }
@@ -473,35 +561,40 @@ class _ScanQrPageState extends State<ScanQrPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Stack(
-      children: [
-        MobileScanner(
-          onDetect: (capture) {
-            final List<Barcode> barcodes = capture.barcodes;
-            if (barcodes.isNotEmpty && !_isProcessing) {
-              final String code = barcodes.first.rawValue!;
-              _verifyQrCode(code);
-            }
-          },
-        ),
-        if (_scannedData != null)
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              color: _isValid ? theme.colorScheme.primary : theme.colorScheme.error,
-              child: Text(
-                _scannedData!,
-                style: TextStyle(color: _isValid ? theme.colorScheme.onPrimary : theme.colorScheme.onError, fontSize: 18),
-                textAlign: TextAlign.center,
+    return Builder(builder: (context) {
+      return Stack(
+        children: [
+          MobileScanner(
+            controller: _scannerController,
+            onDetect: (capture) {
+              final List<Barcode> barcodes = capture.barcodes;
+              if (barcodes.isNotEmpty) {
+                final String? code = barcodes.first.rawValue;
+                if (code != null) {
+                  _verifyQrCode(code);
+                }
+              }
+            },
+          ),
+          if (_scannedData != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                color: _isValid ? Colors.green : Colors.red,
+                child: Text(
+                  _scannedData!,
+                  style: TextStyle(color: theme.colorScheme.onPrimary, fontSize: 18),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
-          ),
-        if (_isProcessing)
-          const Center(
-            child: CircularProgressIndicator(),
-          ),
-      ],
-    );
+          if (_isProcessing)
+            const Center(
+              child: CircularProgressIndicator(),
+            ),
+        ],
+      );
+    });
   }
 }

@@ -32,6 +32,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   final TextEditingController _reviewController = TextEditingController();
   bool _isReviewSectionExpanded = false;
   bool _isRegistered = false;
+  bool _isAttended = false;
   bool _isLoadingReviews = true;
   bool _isFavorite = false;
   bool _isTogglingFavorite = false;
@@ -39,12 +40,13 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
 
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
+  StreamSubscription? _userEventsSubscription;
 
   @override
   void initState() {
     super.initState();
     _getRatingAndReviews();
-    _checkIfRegistered();
+    _listenToUserEvents();
     _checkIfFavorite();
 
     _animationController = AnimationController(
@@ -67,6 +69,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     _reviewRequestTimer?.cancel();
     _reviewController.dispose();
     _animationController.dispose();
+    _userEventsSubscription?.cancel();
     super.dispose();
   }
 
@@ -96,17 +99,20 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     );
   }
 
-  Future<void> _checkIfRegistered() async {
+  void _listenToUserEvents() {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    DocumentSnapshot userDoc = await DatabaseMethods().getUser(user.uid);
-    if (userDoc.exists && userDoc.data() != null) {
-      Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-      if (mounted && (userData['bookedEvents'] as List?)?.contains(widget.id) == true) {
-        setState(() {
-          _isRegistered = true;
-        });
-      }
+    if (user != null) {
+      _userEventsSubscription = DatabaseMethods().getUserStream(user.uid).listen((userDoc) {
+        if (mounted && userDoc.exists) {
+          final data = userDoc.data() as Map<String, dynamic>;
+          final booked = data.containsKey('bookedEvents') ? List<String>.from(data['bookedEvents']) : [];
+          final attended = data.containsKey('attendedEvents') ? List<String>.from(data['attendedEvents']) : [];
+          setState(() {
+            _isRegistered = booked.contains(widget.id);
+            _isAttended = attended.contains(widget.id);
+          });
+        }
+      });
     }
   }
 
@@ -187,6 +193,11 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (_isAttended)
+                    _buildStatusBadge('Attended', theme.colorScheme.secondary)
+                  else if (_isRegistered)
+                    _buildStatusBadge('Registered', theme.colorScheme.primary),
+                  const SizedBox(height: 10.0),
                   Text("About Event", style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10.0),
                   Text(widget.detail, style: theme.textTheme.bodyLarge),
@@ -463,9 +474,6 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                   backgroundColor: Colors.green,
                   content: Text("Successfully registered for the event!")));
-              setState(() {
-                _isRegistered = true;
-              });
             },
       style: ElevatedButton.styleFrom(
         minimumSize: const Size(double.infinity, 50),
@@ -473,7 +481,22 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
         foregroundColor: theme.colorScheme.onPrimary,
         disabledBackgroundColor: Colors.grey.shade600,
       ),
-      child: Text(_isRegistered ? "Already Registered" : "Register Now"),
+      child: Text(_isAttended ? "Attended" : (_isRegistered ? "Already Registered" : "Register Now")),
     );
   }
+
+  Widget _buildStatusBadge(String status, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        status,
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+      ),
+    );
+  }
+
 }

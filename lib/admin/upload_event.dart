@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/Pages/location_picker_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -20,7 +22,7 @@ class _UploadEventState extends State<UploadEvent> {
   final TextEditingController _locationController = TextEditingController();
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
-  File? selectedImage;
+  Uint8List? _selectedImageBytes;
   String? _selectedCategory;
   LatLng? _pickedLocation;
   bool _isUploading = false;
@@ -42,7 +44,7 @@ class _UploadEventState extends State<UploadEvent> {
     _detailController.clear();
     _locationController.clear();
     setState(() {
-      selectedImage = null;
+      _selectedImageBytes = null;
       _selectedDate = null;
       _selectedTime = null;
       _selectedCategory = null;
@@ -93,23 +95,34 @@ class _UploadEventState extends State<UploadEvent> {
   Future getImage() async {
     final image = await _picker.pickImage(source: ImageSource.gallery);
     if (image != null) {
-      selectedImage = File(image.path);
-      setState(() {});
+      final file = File(image.path);
+      final compressedBytes = await FlutterImageCompress.compressWithFile(
+        file.absolute.path,
+        quality: 85,
+        minWidth: 1024,
+        minHeight: 768,
+      );
+      if (compressedBytes != null) {
+        setState(() {
+          _selectedImageBytes = compressedBytes;
+        });
+      }
     }
   }
 
   uploadItem() async {
     if (_isUploading) return;
 
-    if (selectedImage == null ||
+    if (_selectedImageBytes == null ||
         _nameController.text.isEmpty ||
         _detailController.text.isEmpty ||
         _locationController.text.isEmpty ||
         _selectedDate == null ||
         _selectedTime == null ||
-        _pickedLocation == null) {
+        _pickedLocation == null ||
+        _selectedCategory == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("Please fill all fields and select an image, date, time, and location.")));
+          content: Text("Please fill all fields and select an image, date, time, category, and location.")));
       return;
     }
 
@@ -127,13 +140,14 @@ class _UploadEventState extends State<UploadEvent> {
       );
 
       await DatabaseMethods().addNews(
-        selectedImage!,
+        _selectedImageBytes!,
         _nameController.text.trim(),
         _detailController.text.trim(),
         _locationController.text.trim(),
         _pickedLocation!.latitude,
         _pickedLocation!.longitude,
         combinedDateTime,
+        _selectedCategory!,
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -173,7 +187,7 @@ class _UploadEventState extends State<UploadEvent> {
                   onTap: () {
                     getImage();
                   },
-                  child: selectedImage == null
+                  child: _selectedImageBytes == null
                       ? Container(
                           height: 150,
                           width: 150,
@@ -184,8 +198,8 @@ class _UploadEventState extends State<UploadEvent> {
                         )
                       : ClipRRect(
                           borderRadius: BorderRadius.circular(10),
-                          child: Image.file(
-                            selectedImage!,
+                          child: Image.memory(
+                            _selectedImageBytes!,
                             height: 150,
                             width: 150,
                             fit: BoxFit.cover,
