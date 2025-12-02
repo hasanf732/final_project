@@ -93,35 +93,47 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
           ),
         ],
       ),
-      body: GoogleMap(
-        style: isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
-        initialCameraPosition: CameraPosition(
-          target: _initialPosition,
-          zoom: 15,
-        ),
-        onMapCreated: (controller) {
-          _mapController = controller;
-        },
-        onTap: (position) {
-          setState(() {
-            _pickedLocation = position;
-          });
-        },
-        markers: _pickedLocation == null || _customMarker == null
-            ? {}
-            : {
-                Marker(
-                  markerId: const MarkerId('picked-location'),
-                  position: _pickedLocation!,
-                  icon: _customMarker!,
-                  infoWindow: const InfoWindow(
-                    title: 'Selected Location',
-                    snippet: 'This location will be used for the event.',
-                  ),
-                ),
-              },
-        myLocationEnabled: true,
-        myLocationButtonEnabled: false,
+      body: FutureBuilder<String>(
+        future: MapStyles.getStyle(isDarkMode ? 'Images/map_style_dark.json' : 'Images/map_style.json'),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError || !snapshot.hasData) {
+            return const Center(child: Text('Error loading map style'));
+          }
+          return GoogleMap(
+            style: snapshot.data,
+            initialCameraPosition: CameraPosition(
+              target: _initialPosition,
+              zoom: 15,
+            ),
+            onMapCreated: (controller) {
+              _mapController = controller;
+              _mapController?.animateCamera(CameraUpdate.newLatLng(_initialPosition));
+            },
+            onTap: (position) {
+              setState(() {
+                _pickedLocation = position;
+              });
+            },
+            markers: _pickedLocation == null || _customMarker == null
+                ? {}
+                : {
+                    Marker(
+                      markerId: const MarkerId('picked-location'),
+                      position: _pickedLocation!,
+                      icon: _customMarker!,
+                      infoWindow: const InfoWindow(
+                        title: 'Selected Location',
+                        snippet: 'This location will be used for the event.',
+                      ),
+                    ),
+                  },
+            myLocationEnabled: true,
+            myLocationButtonEnabled: false,
+          );
+        }
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _getCurrentLocation,

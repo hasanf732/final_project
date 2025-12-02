@@ -284,31 +284,35 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text("Reviews", style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 5.0),
-                _isLoadingReviews
-                    ? Shimmer.fromColors(
-                        baseColor: theme.colorScheme.surface,
-                        highlightColor: theme.colorScheme.surface.withOpacity(0.5),
-                        child: Container(height: 20, width: 150, color: Colors.white),
-                      )
-                    : Row(
-                        children: [
-                          RatingBarIndicator(
-                            rating: _averageRating,
-                            itemBuilder: (context, index) => const Icon(Icons.star, color: Colors.amber),
-                            itemCount: 5,
-                            itemSize: 20.0,
-                            direction: Axis.horizontal,
-                          ),
-                          const SizedBox(width: 10),
-                          Text("($_totalRatings Reviews)", style: theme.textTheme.bodyMedium)
-                        ],
-                      ),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Reviews", style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 5.0),
+                  _isLoadingReviews
+                      ? Shimmer.fromColors(
+                          baseColor: theme.colorScheme.surface,
+                          highlightColor: theme.colorScheme.surface.withOpacity(0.5),
+                          child: Container(height: 20, width: 150, color: Colors.white),
+                        )
+                      : Row(
+                          children: [
+                            RatingBarIndicator(
+                              rating: _averageRating,
+                              itemBuilder: (context, index) => const Icon(Icons.star, color: Colors.amber),
+                              itemCount: 5,
+                              itemSize: 20.0,
+                              direction: Axis.horizontal,
+                            ),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text("($_totalRatings Reviews)", style: theme.textTheme.bodyMedium),
+                            )
+                          ],
+                        ),
+                ],
+              ),
             ),
             TextButton(
               onPressed: () {
@@ -333,7 +337,9 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   }
 
   Widget _buildReviewEditor(ThemeData theme) {
-    return Padding(
+  // Wrap the content in a SingleChildScrollView
+  return SingleChildScrollView(
+    child: Padding(
       padding: const EdgeInsets.only(top: 20.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -394,10 +400,13 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
             ),
             child: const Text("Submit Review"),
           ),
+          // This padding ensures there's space below the button when the keyboard is up
+          SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildReviewList(ThemeData theme) {
     if (_reviews.isEmpty) {

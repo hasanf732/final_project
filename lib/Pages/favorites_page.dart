@@ -65,7 +65,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return const Center(
               child: Text(
-                'You have no favorite events yet.\nTap the heart on an event to save it!',
+                'You have no favorite events yet.\nTap the bookmark on an event to save it!',
                 textAlign: TextAlign.center,
               ),
             );
@@ -94,7 +94,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                   title: Text(eventData['Name'] ?? 'Unnamed Event', style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text(eventData['Location'] ?? 'No location'),
                   trailing: IconButton(
-                    icon: const Icon(Icons.favorite, color: Colors.red),
+                    icon: Icon(Icons.bookmark, color: Theme.of(context).colorScheme.primary),
                     onPressed: () {
                       DatabaseMethods().removeFromFavorites(eventId);
                     },
