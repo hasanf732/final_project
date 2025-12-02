@@ -80,7 +80,7 @@ class BookedEventsList extends StatelessWidget {
         final eventIds = List<String>.from(userData[status] ?? []);
 
         if (eventIds.isEmpty) {
-          return Center(child: Text("No events found in this category."));
+          return const Center(child: Text("No events found in this category."));
         }
 
         return StreamBuilder<QuerySnapshot>(
@@ -156,13 +156,13 @@ class BookedEventsList extends StatelessWidget {
                               placeholder: (context, url) => Container(
                                 height: 80,
                                 width: 80,
-                                color: theme.colorScheme.surface.withOpacity(0.1),
+                                color: theme.colorScheme.surface.withAlpha(26),
                               ),
                               errorWidget: (context, url, error) => Container(
                                 height: 80,
                                 width: 80,
-                                color: theme.colorScheme.surface.withOpacity(0.1),
-                                child: Icon(Icons.broken_image, color: theme.colorScheme.onSurface.withOpacity(0.4)),
+                                color: theme.colorScheme.surface.withAlpha(26),
+                                child: Icon(Icons.broken_image, color: theme.colorScheme.onSurface.withAlpha(102)),
                               ),
                             ),
                           ),
@@ -220,7 +220,7 @@ class BookedEventsList extends StatelessWidget {
       itemBuilder: (context, index) {
         return Shimmer.fromColors(
           baseColor: theme.colorScheme.surface,
-          highlightColor: theme.colorScheme.surface.withOpacity(0.5),
+          highlightColor: theme.colorScheme.surface.withAlpha(128),
           child: Card(
             child: Padding(
               padding: const EdgeInsets.all(12.0),

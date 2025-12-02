@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'package:final_project/services/auth.dart';
-import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Signup extends StatefulWidget {
   final bool isLogin;
@@ -240,7 +238,7 @@ class _SignupState extends State<Signup> {
               if (!_isLoading) ...[
                 const OrDivider(),
                 const SizedBox(height: 20.0),
-                _buildGoogleSignInButton(onTap: _signInWithGoogle),
+                _GoogleSignInButton(onTap: _signInWithGoogle),
               ],
             ],
           ),
@@ -256,9 +254,9 @@ class _SignupState extends State<Signup> {
       style: theme.textTheme.bodyLarge, 
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7)),
+        labelStyle: TextStyle(color: theme.colorScheme.onSurface.withAlpha(178)),
         enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: theme.colorScheme.onSurface.withOpacity(0.3)),
+          borderSide: BorderSide(color: theme.colorScheme.onSurface.withAlpha(77)),
         ),
         focusedBorder: UnderlineInputBorder(
           borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
@@ -282,9 +280,9 @@ class _SignupState extends State<Signup> {
       style: theme.textTheme.bodyLarge,
       decoration: InputDecoration(
         labelText: "Password",
-        labelStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7)),
+        labelStyle: TextStyle(color: theme.colorScheme.onSurface.withAlpha(178)),
          enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: theme.colorScheme.onSurface.withOpacity(0.3)),
+          borderSide: BorderSide(color: theme.colorScheme.onSurface.withAlpha(77)),
         ),
         focusedBorder: UnderlineInputBorder(
           borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
@@ -312,9 +310,9 @@ class _SignupState extends State<Signup> {
       style: theme.textTheme.bodyLarge,
       decoration: InputDecoration(
         labelText: "Confirm Password",
-        labelStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7)),
+        labelStyle: TextStyle(color: theme.colorScheme.onSurface.withAlpha(178)),
          enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: theme.colorScheme.onSurface.withOpacity(0.3)),
+          borderSide: BorderSide(color: theme.colorScheme.onSurface.withAlpha(77)),
         ),
         focusedBorder: UnderlineInputBorder(
           borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
@@ -367,7 +365,7 @@ class _SignupState extends State<Signup> {
 
   Widget _buildPasswordRequirementRow(String text, bool isMet) {
     final theme = Theme.of(context);
-    final color = isMet ? Colors.green : theme.colorScheme.onSurface.withOpacity(0.6);
+    final color = isMet ? Colors.green : theme.colorScheme.onSurface.withAlpha(153);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3.0),
       child: Row(
@@ -424,15 +422,15 @@ class OrDivider extends StatelessWidget {
     return Row(
       children: <Widget>[
         const Expanded(child: Divider()),
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: Text("or", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7)))),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: Text("or", style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(178)))),
         const Expanded(child: Divider()),
       ],
     );
   }
 }
 
-class _buildGoogleSignInButton extends StatelessWidget {
-  const _buildGoogleSignInButton({required this.onTap});
+class _GoogleSignInButton extends StatelessWidget {
+  const _GoogleSignInButton({required this.onTap});
   final VoidCallback onTap;
 
   @override

@@ -238,20 +238,20 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+                  colors: [Colors.transparent, Colors.black.withAlpha(178)],
                   stops: const [0.5, 1.0],
                 ),
               ),
             ),
           ],
         ),
-        title: Text(widget.name, style: TextStyle(color: Colors.white, shadows: [Shadow(blurRadius: 2, color: Colors.black.withOpacity(0.7))])),
+        title: Text(widget.name, style: TextStyle(color: Colors.white, shadows: [Shadow(blurRadius: 2, color: Colors.black.withAlpha(178))])),
         titlePadding: const EdgeInsets.only(left: 60, bottom: 16),
       ),
       leading: Padding(
         padding: const EdgeInsets.only(left: 16.0, top: 8, bottom: 8),
         child: CircleAvatar(
-          backgroundColor: theme.colorScheme.surface.withOpacity(0.8),
+          backgroundColor: theme.colorScheme.surface.withAlpha(204),
           child: BackButton(color: theme.colorScheme.onSurface),
         ),
       ),
@@ -259,7 +259,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
         Padding(
           padding: const EdgeInsets.only(right: 16.0, top: 8, bottom: 8),
           child: CircleAvatar(
-             backgroundColor: theme.colorScheme.surface.withOpacity(0.8),
+             backgroundColor: theme.colorScheme.surface.withAlpha(204),
             child: ScaleTransition(
               scale: _scaleAnimation,
               child: IconButton(
@@ -292,7 +292,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                 _isLoadingReviews
                     ? Shimmer.fromColors(
                         baseColor: theme.colorScheme.surface,
-                        highlightColor: theme.colorScheme.surface.withOpacity(0.5),
+                        highlightColor: theme.colorScheme.surface.withAlpha(128),
                         child: Container(height: 20, width: 150, color: Colors.white),
                       )
                     : Row(
@@ -369,12 +369,14 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
           ElevatedButton(
             onPressed: () async {
               if (_userRating == 0) {
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                     backgroundColor: Colors.red,
                     content: Text("Please select a rating (at least 1 star).")));
                 return;
               }
               await DatabaseMethods().addReview(widget.id, _userRating, _reviewController.text);
+              if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                   backgroundColor: Colors.green,
                   content: Text("Thank you for your feedback!")));
@@ -442,7 +444,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
       itemBuilder: (context, index) {
         return Shimmer.fromColors(
            baseColor: theme.colorScheme.surface,
-           highlightColor: theme.colorScheme.surface.withOpacity(0.5),
+           highlightColor: theme.colorScheme.surface.withAlpha(128),
           child: Card(
             child: Padding(
               padding: const EdgeInsets.all(12.0),
@@ -471,6 +473,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
           ? null
           : () async {
               await DatabaseMethods().registerForEvent(widget.id);
+              if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                   backgroundColor: Colors.green,
                   content: Text("Successfully registered for the event!")));

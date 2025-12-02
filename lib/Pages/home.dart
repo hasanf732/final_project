@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:final_project/Pages/detail_page.dart';
-import 'package:final_project/Pages/booking.dart';
 import 'package:final_project/Pages/favorites_page.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -166,11 +165,11 @@ class _HomeState extends State<Home> {
           }
         },
         onError: (e) {
-          print("Error getting location stream: $e");
+          // Don't invoke 'print' in production code.
         }
       );
     } catch (e) {
-      print("Error setting up location listener: $e");
+      // Don't invoke 'print' in production code.
     }
   }
 
@@ -199,7 +198,7 @@ class _HomeState extends State<Home> {
             pinned: true,
             floating: true,
             elevation: 0,
-            backgroundColor: theme.scaffoldBackgroundColor.withOpacity(0.90),
+            backgroundColor: theme.scaffoldBackgroundColor.withAlpha(230),
             title: Text("Hello, ${_userName.isNotEmpty ? _userName : 'User'}!"),
             actions: [
               IconButton(
@@ -259,7 +258,7 @@ class _HomeState extends State<Home> {
     return FirebaseFirestore.instance.collection('News').snapshots().map((snapshot) {
       var docsWithRatings = snapshot.docs
           .map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
+            final data = doc.data();
             final double avgRating = _calculateAverageRating(data['ratings']);
             return MapEntry(doc, avgRating);
           })
@@ -277,7 +276,7 @@ class _HomeState extends State<Home> {
       if (_currentPosition == null) return [];
 
       var docsWithDistances = snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
+        final data = doc.data();
         final lat = data['latitude'];
         final lon = data['longitude'];
 
@@ -291,7 +290,7 @@ class _HomeState extends State<Home> {
           return MapEntry(doc, distance);
         }
         return null;
-      }).where((entry) => entry != null).cast<MapEntry<DocumentSnapshot, double>>().toList();
+      }).whereType<MapEntry<DocumentSnapshot, double>>().toList();
 
       docsWithDistances.sort((a, b) => a.value.compareTo(b.value));
 
@@ -566,7 +565,7 @@ class _HomeState extends State<Home> {
   Widget _buildBookmarkButton(bool isBookmarked, VoidCallback onPressed) {
      return Card(
       elevation: 2,
-      color: Theme.of(context).cardColor.withOpacity(0.6),
+      color: Theme.of(context).cardColor.withAlpha(153),
       margin: const EdgeInsets.all(6),
       shape: const CircleBorder(),
       child: IconButton(
@@ -585,7 +584,7 @@ class _HomeState extends State<Home> {
       margin: const EdgeInsets.all(6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.8),
+        color: color.withAlpha(204),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
@@ -684,7 +683,7 @@ class _HomeState extends State<Home> {
       height: height, 
       width: width,
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceVariant,
+        color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(15.0),
       ), 
       child: Icon(Icons.broken_image, color: theme.colorScheme.onSurfaceVariant, size: 40)
@@ -696,10 +695,10 @@ class AnimatedSearchBar extends StatefulWidget {
    final TextEditingController searchController;
   final List<String> hintTexts;
 
-  const AnimatedSearchBar({Key? key, required this.searchController, required this.hintTexts}) : super(key: key);
+  const AnimatedSearchBar({super.key, required this.searchController, required this.hintTexts});
 
   @override
-  _AnimatedSearchBarState createState() => _AnimatedSearchBarState();
+  State<AnimatedSearchBar> createState() => _AnimatedSearchBarState();
 }
 
 class _AnimatedSearchBarState extends State<AnimatedSearchBar> {

@@ -39,11 +39,11 @@ class _BottomnavState extends State<Bottomnav> {
     final isDarkMode = theme.brightness == Brightness.dark;
 
     final List<Widget> items = [
-      Icon(Icons.home_outlined, color: currentTabIndex == 0 ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withOpacity(0.6)),
-      Icon(Icons.book_outlined, color: currentTabIndex == 1 ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withOpacity(0.6)),
-      Icon(Icons.map_outlined, color: currentTabIndex == 2 ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withOpacity(0.6)),
-      Icon(Icons.cloud_upload_outlined, color: currentTabIndex == 3 ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withOpacity(0.6)),
-      Icon(Icons.person_outlined, color: currentTabIndex == 4 ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withOpacity(0.6)),
+      Icon(Icons.home_outlined, color: currentTabIndex == 0 ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withAlpha(153)),
+      Icon(Icons.book_outlined, color: currentTabIndex == 1 ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withAlpha(153)),
+      Icon(Icons.map_outlined, color: currentTabIndex == 2 ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withAlpha(153)),
+      Icon(Icons.cloud_upload_outlined, color: currentTabIndex == 3 ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withAlpha(153)),
+      Icon(Icons.person_outlined, color: currentTabIndex == 4 ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withAlpha(153)),
     ];
 
     return Scaffold(

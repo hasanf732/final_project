@@ -83,6 +83,7 @@ class _ProfileState extends State<Profile> {
   }
 
   Future<void> _logout() async {
+    if (!mounted) return;
     bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -109,6 +110,7 @@ class _ProfileState extends State<Profile> {
       query: 'subject=UniVent App Feedback/Bug Report',
     );
     if (!await launchUrl(emailLaunchUri)) {
+       if (!mounted) return;
        ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Could not launch email client.")),
       );
@@ -206,7 +208,7 @@ class _ProfileState extends State<Profile> {
           borderRadius: BorderRadius.circular(15.0),
            boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withAlpha(13),
               blurRadius: 10,
               offset: const Offset(0, 5),
             ),
@@ -227,8 +229,8 @@ class _ProfileState extends State<Profile> {
             title: const Text('Dark Mode'),
             secondary: Icon(Icons.dark_mode_outlined, color: theme.colorScheme.primary),
             value: themeProvider.darkTheme,
-            activeColor: theme.colorScheme.primary,
-            inactiveTrackColor: theme.colorScheme.onSurface.withOpacity(0.2),
+            activeThumbImage: const AssetImage('assets/images/sun.png'),
+            inactiveThumbColor: theme.colorScheme.onSurface.withAlpha(51),
             onChanged: (value) {
               themeProvider.setDarkTheme(value);
             },

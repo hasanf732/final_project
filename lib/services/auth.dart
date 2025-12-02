@@ -17,7 +17,6 @@ class AuthMethods {
       }
       return false;
     } catch (e) {
-      print("Error checking admin status: $e");
       return false;
     }
   }
@@ -82,7 +81,6 @@ class AuthMethods {
   }
 
   Future<void> signOut() async {
-    print(">>> SIGN OUT from services/auth.dart");
     await auth.signOut();
     await GoogleSignIn().signOut();
   }

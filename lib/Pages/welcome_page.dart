@@ -77,7 +77,7 @@ class _WelcomePageState extends State<WelcomePage> with TickerProviderStateMixin
                     "Your ultimate guide to university events, clubs, and more.",
                     textAlign: TextAlign.center,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      color: theme.colorScheme.onBackground.withOpacity(0.7),
+                      color: theme.colorScheme.onSurface.withAlpha(178),
                     ),
                   ),
                   const SizedBox(height: 40),
