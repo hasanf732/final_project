@@ -47,12 +47,18 @@ class _MapPageState extends State<MapPage> {
   Set<Marker> _markers = {};
   Position? _currentPosition;
   final Map<String, BitmapDescriptor> _markerBitmaps = {};
-  List<Place> _selectedClusterPlaces = [];
+
+  // State for tracking selections and UI
   Place? _selectedPlace;
+  bool _isSheetOpen = false;
+
+  // State for search and filtering
+  List<Place> _allPlaces = [];
+  List<Place> _searchResults = [];
+  final FocusNode _searchFocusNode = FocusNode();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String? _selectedFilter;
-
   final List<String> _filters = ['All', 'Music', 'Art', 'Sport', 'Film', 'Volunteer', 'Cyber', 'Astro', 'Media'];
 
   @override
@@ -61,10 +67,24 @@ class _MapPageState extends State<MapPage> {
     _manager = _initClusterManager();
     _fetchEventLocations();
     _getCurrentLocation();
+
     _searchController.addListener(() {
-      setState(() => _searchQuery = _searchController.text);
-      _filterAndRefreshMap();
+      if (_searchQuery != _searchController.text) {
+        setState(() => _searchQuery = _searchController.text);
+        _filterAndRefreshMap();
+      }
     });
+
+    _searchFocusNode.addListener(() {
+      setState(() {}); // Re-render to show/hide search results dropdown
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
   }
 
   cluster_manager.ClusterManager _initClusterManager() {
@@ -88,53 +108,50 @@ class _MapPageState extends State<MapPage> {
       final data = result.data();
       final lat = data['latitude'];
       final lon = data['longitude'];
-      final String name = data['Name'] ?? 'No Name';
-      final String imageUrl = data['Image'] ?? '';
-      final String category = data['Category'] ?? 'Unknown';
 
       if (lat != null && lon != null) {
         newItems.add(Place(
           id: result.id,
-          name: name,
-          imageUrl: imageUrl,
+          name: data['Name'] ?? 'No Name',
+          imageUrl: data['Image'] ?? '',
           latLng: LatLng(lat, lon),
-          category: category,
+          category: data['Category'] ?? 'Unknown',
           rating: 0.0, // Placeholder for rating
           document: result,
         ));
       }
     }
+
+    setState(() {
+      _allPlaces = newItems;
+    });
+
     _manager.setItems(newItems);
     _createMarkerBitmaps(newItems);
   }
 
   void _filterAndRefreshMap() {
-    FirebaseFirestore.instance.collection('News').get().then((querySnapshot) {
-      final List<Place> allPlaces = querySnapshot.docs.map((doc) {
-        final data = doc.data();
-        return Place(
-          id: doc.id,
-          name: data['Name'] ?? '',
-          imageUrl: data['Image'] ?? '',
-          latLng: LatLng(data['latitude'] ?? 0, data['longitude'] ?? 0),
-          category: data['Category'] ?? '',
-          rating: 0.0, // Placeholder
-          document: doc,
-        );
-      }).toList();
+    List<Place> placesToShowOnMap = _allPlaces;
+    List<Place> searchDropdownResults = [];
 
-      List<Place> filteredPlaces = allPlaces;
+    if (_searchQuery.isNotEmpty) {
+      searchDropdownResults = _allPlaces.where((p) => p.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+      placesToShowOnMap = searchDropdownResults;
+    } else {
+      searchDropdownResults = [];
+    }
 
-      if (_searchQuery.isNotEmpty) {
-        filteredPlaces = filteredPlaces.where((p) => p.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
-      }
-      if (_selectedFilter != null && _selectedFilter != 'All') {
-        filteredPlaces = filteredPlaces.where((p) => p.category == _selectedFilter).toList();
-      }
-      
-      _manager.setItems(filteredPlaces);
+    setState(() {
+      _searchResults = searchDropdownResults;
     });
+
+    if (_selectedFilter != null && _selectedFilter != 'All') {
+      placesToShowOnMap = placesToShowOnMap.where((p) => p.category == _selectedFilter).toList();
+    }
+    
+    _manager.setItems(placesToShowOnMap);
   }
+
 
   Future<void> _createMarkerBitmaps(List<Place> places) async {
     for (final place in places) {
@@ -165,7 +182,7 @@ class _MapPageState extends State<MapPage> {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final bottomPadding = MediaQuery.of(context).padding.bottom + 80;
+    final bool showSearchResults = _searchFocusNode.hasFocus && _searchQuery.isNotEmpty;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -206,27 +223,22 @@ class _MapPageState extends State<MapPage> {
                   if (mounted) {
                     setState(() {
                       _selectedPlace = null;
-                      _selectedClusterPlaces.clear();
+                      _searchFocusNode.unfocus();
                     });
                   }
                 },
               ),
               _buildSearchAndFilterUI(),
-              if (_selectedClusterPlaces.isNotEmpty && _selectedPlace == null) 
-                _buildEventCarousel(bottomPadding),
             ],
           );
         },
       ),
       floatingActionButton: Visibility(
-        visible: _selectedPlace == null,
-        child: Padding(
-          padding: EdgeInsets.only(bottom: _selectedClusterPlaces.isNotEmpty ? 150.0 + 20.0 : 80.0),
-          child: FloatingActionButton(
-            onPressed: _animateToUser,
-            tooltip: 'My Location',
-            child: const Icon(Icons.my_location),
-          ),
+        visible: !_isSheetOpen && !showSearchResults,
+        child: FloatingActionButton(
+          onPressed: _animateToUser,
+          tooltip: 'My Location',
+          child: const Icon(Icons.my_location),
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -240,52 +252,102 @@ class _MapPageState extends State<MapPage> {
 
   Widget _buildSearchAndFilterUI() {
     final theme = Theme.of(context);
+    final bool showSearchResults = _searchFocusNode.hasFocus && _searchQuery.isNotEmpty;
+
     return Positioned(
       top: MediaQuery.of(context).padding.top + 10,
       left: 10,
       right: 10,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            decoration: BoxDecoration(color: theme.cardColor, borderRadius: BorderRadius.circular(13), border: Border.all(color: theme.dividerColor, width: 1)),
+            decoration: BoxDecoration(
+              color: theme.cardColor,
+              borderRadius: BorderRadius.circular(13),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8, offset: const Offset(0, 2)),
+              ],
+            ),
             child: TextField(
               controller: _searchController,
+              focusNode: _searchFocusNode,
               decoration: InputDecoration(
                 hintText: 'Search events...',
                 prefixIcon: Icon(Icons.search, color: theme.hintColor),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-                suffixIcon: _searchQuery.isNotEmpty ? IconButton(icon: const Icon(Icons.close), onPressed: () => _searchController.clear()) : null,
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(icon: const Icon(Icons.close), onPressed: () => _searchController.clear())
+                    : null,
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 40,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _filters.length,
-              itemBuilder: (context, index) {
-                final filter = _filters[index];
-                final bool isSelected = _selectedFilter == filter;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                  child: ChoiceChip(
-                    label: Text(filter),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      setState(() => _selectedFilter = selected ? filter : null);
-                      _filterAndRefreshMap();
+          if (showSearchResults)
+            Container(
+              height: 220,
+              margin: const EdgeInsets.only(top: 2),
+              decoration: BoxDecoration(
+                color: theme.cardColor,
+                borderRadius: BorderRadius.circular(13),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8, offset: const Offset(0, 2)),
+                ],
+              ),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                itemCount: _searchResults.length,
+                itemBuilder: (context, index) {
+                  final place = _searchResults[index];
+                  return ListTile(
+                    title: Text(place.name),
+                    subtitle: Text(place.category),
+                    onTap: () {
+                      _searchController.clear();
+                      _searchFocusNode.unfocus();
+
+                      if (_isSheetOpen) {
+                        Navigator.of(context).pop();
+                      }
+
+                      Future.delayed(const Duration(milliseconds: 100), () {
+                        _animateToLocation(place.latLng);
+                        _onMarkerTapped(place);
+                      });
                     },
-                    backgroundColor: theme.cardColor,
-                    selectedColor: theme.colorScheme.primary,
-                    labelStyle: TextStyle(color: isSelected ? theme.colorScheme.onPrimary : theme.textTheme.bodyLarge?.color),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: theme.dividerColor)),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
-          ),
+          if (!showSearchResults) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 40,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _filters.length,
+                itemBuilder: (context, index) {
+                  final filter = _filters[index];
+                  final bool isSelected = _selectedFilter == filter;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                    child: ChoiceChip(
+                      label: Text(filter),
+                      selected: isSelected,
+                      onSelected: (selected) {
+                        setState(() => _selectedFilter = selected ? filter : null);
+                        _filterAndRefreshMap();
+                      },
+                      backgroundColor: theme.cardColor,
+                      selectedColor: theme.colorScheme.primary,
+                      labelStyle: TextStyle(color: isSelected ? theme.colorScheme.onPrimary : theme.textTheme.bodyLarge?.color),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: theme.dividerColor)),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -293,14 +355,18 @@ class _MapPageState extends State<MapPage> {
 
   void _animateToUser() async {
     if (_currentPosition != null) {
-      final GoogleMapController controller = await _controller.future;
-      controller.animateCamera(CameraUpdate.newCameraPosition(
-        CameraPosition(
-          target: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
-          zoom: 14.0,
-        ),
-      ));
+      _animateToLocation(LatLng(_currentPosition!.latitude, _currentPosition!.longitude));
     }
+  }
+
+  void _animateToLocation(LatLng location) async {
+    final GoogleMapController controller = await _controller.future;
+    controller.animateCamera(CameraUpdate.newCameraPosition(
+      CameraPosition(
+        target: location,
+        zoom: 17.5,
+      ),
+    ));
   }
 
   Future<Marker> _markerBuilder(cluster_manager.Cluster<Place> cluster) async {
@@ -320,6 +386,7 @@ class _MapPageState extends State<MapPage> {
   void _onMarkerTapped(Place place) {
     setState(() {
       _selectedPlace = place;
+      _isSheetOpen = true;
     });
 
     showModalBottomSheet(
@@ -330,6 +397,7 @@ class _MapPageState extends State<MapPage> {
     ).whenComplete(() {
       setState(() {
         _selectedPlace = null;
+        _isSheetOpen = false;
       });
     });
   }
@@ -354,7 +422,6 @@ class _MapPageState extends State<MapPage> {
           ),
           child: Column(
             children: [
-              // Draggable handle
               Center(
                 child: Container(
                   width: 40,
@@ -371,7 +438,6 @@ class _MapPageState extends State<MapPage> {
                   controller: controller,
                   padding: EdgeInsets.zero,
                   children: [
-                    // Event Image
                     if (place.imageUrl.isNotEmpty)
                       SizedBox(
                         height: screenHeight * 0.25,
@@ -386,8 +452,6 @@ class _MapPageState extends State<MapPage> {
                           ),
                         ),
                       ),
-
-                    // Event Details
                     Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
@@ -465,16 +529,92 @@ class _MapPageState extends State<MapPage> {
     return Marker(
       markerId: MarkerId(cluster.location.toString()),
       position: cluster.location,
-      onTap: () {
-        _controller.future.then((c) => c.animateCamera(CameraUpdate.newLatLngZoom(cluster.location, 17.5)));
-        if (mounted) {
-          setState(() {
-            _selectedPlace = null;
-            _selectedClusterPlaces = cluster.items.toList();
-          });
-        }
-      },
+      onTap: () => _onClusterTapped(cluster.items.toList()),
       icon: await _getClusterMarker(cluster.count, context),
+    );
+  }
+
+  void _onClusterTapped(List<Place> places) {
+    setState(() => _isSheetOpen = true);
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => _buildClusterListSheet(places),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+    ).whenComplete(() {
+      setState(() => _isSheetOpen = false);
+    });
+  }
+
+  Widget _buildClusterListSheet(List<Place> places) {
+    final theme = Theme.of(context);
+    return DraggableScrollableSheet(
+      initialChildSize: 0.4,
+      minChildSize: 0.2,
+      maxChildSize: 0.6,
+      builder: (_, controller) {
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: Column(
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.symmetric(vertical: 8.0),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[400],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                child: Text(
+                  '${places.length} Events Nearby',
+                  style: theme.textTheme.headlineSmall,
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  controller: controller,
+                  itemCount: places.length,
+                  itemBuilder: (context, index) {
+                    final place = places[index];
+                    return ListTile(
+                      leading: ClipRRect(
+                        borderRadius: BorderRadius.circular(8.0),
+                        child: CachedNetworkImage(
+                          imageUrl: place.imageUrl,
+                          width: 50,
+                          height: 50,
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                          errorWidget: (context, url, error) => const Icon(Icons.error),
+                        ),
+                      ),
+                      title: Text(place.name),
+                      subtitle: Text(place.category),
+                      onTap: () {
+                        _animateToLocation(place.latLng);
+                        Navigator.of(context).pop();
+                        _onMarkerTapped(place);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -537,79 +677,55 @@ class _MapPageState extends State<MapPage> {
   }
 
   static Future<BitmapDescriptor> _getClusterMarker(int count, BuildContext context) async {
-    const int size = 130;
+    const double size = 120; // Slightly smaller for a cleaner look
     final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(pictureRecorder);
-    final Paint paint = Paint()..color = Theme.of(context).colorScheme.secondary;
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
-    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2, paint);
+    final Paint shadowPaint = Paint()
+      ..color = isDarkMode ? Colors.white.withOpacity(0.2) : Colors.black.withOpacity(0.2)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2, shadowPaint);
+
+    final Paint gradientPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          theme.colorScheme.primary,
+          theme.colorScheme.secondary,
+        ],
+        center: const Alignment(0.0, 0.0),
+        radius: 0.8,
+      ).createShader(Rect.fromCircle(center: const Offset(size / 2, size / 2), radius: size / 2));
+    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2 - 4, gradientPaint);
+
+    final Paint borderPaint = Paint()
+      ..color = isDarkMode ? Colors.black.withOpacity(0.5) : Colors.white.withOpacity(0.8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2 - 4, borderPaint);
 
     TextPainter textPainter = TextPainter(textDirection: TextDirection.ltr);
     textPainter.text = TextSpan(
       text: count.toString(),
-      style: TextStyle(fontSize: size / 3, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSecondary),
+      style: TextStyle(
+        fontSize: size / 3,
+        fontWeight: FontWeight.bold,
+        color: theme.colorScheme.onPrimary,
+        shadows: const [
+          Shadow(
+            blurRadius: 2.0,
+            color: Colors.black26,
+            offset: Offset(1.0, 1.0),
+          ),
+        ],
+      ),
     );
     textPainter.layout();
     textPainter.paint(canvas, Offset(size / 2 - textPainter.width / 2, size / 2 - textPainter.height / 2));
 
-    final img = await pictureRecorder.endRecording().toImage(size, size);
+    final img = await pictureRecorder.endRecording().toImage(size.toInt(), size.toInt());
     final data = await img.toByteData(format: ui.ImageByteFormat.png);
     return BitmapDescriptor.fromBytes(data!.buffer.asUint8List());
-  }
-
-  Widget _buildEventCarousel(double bottomPadding) {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: bottomPadding),
-        child: SizedBox(
-          height: 150,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: _selectedClusterPlaces.length,
-            itemBuilder: (context, index) {
-              final place = _selectedClusterPlaces[index];
-              return GestureDetector(
-                onTap: () => _onMarkerTapped(place),
-                child: Container(
-                  width: 280,
-                  margin: const EdgeInsets.symmetric(horizontal: 8.0),
-                  child: Card(
-                    clipBehavior: Clip.antiAlias,
-                    elevation: 4,
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 120,
-                          child: CachedNetworkImage(
-                            imageUrl: place.imageUrl,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            height: double.infinity,
-                            placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-                            errorWidget: (context, url, error) => const Icon(Icons.error),
-                          ),
-                        ),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Text(
-                              place.name,
-                              style: Theme.of(context).textTheme.titleMedium,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
   }
 }
