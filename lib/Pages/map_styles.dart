@@ -1,6 +1,5 @@
-
 class MapStyles {
-  static const String lightStyle = """
+  static const String lightStyle = '''
 [
   {
     "elementType": "geometry",
@@ -161,9 +160,9 @@ class MapStyles {
     ]
   }
 ]
-""";
+''';
 
-  static const String darkStyle = """
+  static const String darkStyle = '''
 [
   {
     "elementType": "geometry",
@@ -282,7 +281,6 @@ class MapStyles {
   {
     "featureType": "transit",
     "elementType": "geometry",
-so
     "stylers": [
       {
         "color": "#2f3948"
@@ -326,5 +324,5 @@ so
     ]
   }
 ]
-""";
+''';
 }
