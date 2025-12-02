@@ -353,17 +353,48 @@ class _HomeState extends State<Home> {
           return const SliverToBoxAdapter(
             child: Center(
               heightFactor: 10,
+              child: Text("No events found."),
+            ),
+          );
+        }
+
+        List<DocumentSnapshot> events = snapshot.data!.docs;
+
+        // Apply category filtering
+        if (_selectedCategory != null) {
+          events = events.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return data['Category'] == _selectedCategory;
+          }).toList();
+        }
+
+        // Apply search query filtering
+        if (_searchQuery.isNotEmpty) {
+          events = events.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final name = data['Name'] as String? ?? '';
+            final detail = data['Detail'] as String? ?? '';
+            final query = _searchQuery.toLowerCase();
+            return name.toLowerCase().contains(query) ||
+                detail.toLowerCase().contains(query);
+          }).toList();
+        }
+
+        if (events.isEmpty) {
+          return const SliverToBoxAdapter(
+            child: Center(
+              heightFactor: 10,
               child: Text("No events match your criteria."),
             ),
           );
         }
-        final events = snapshot.data!.docs;
+
         return SliverList(
           delegate: SliverChildBuilderDelegate(
             (context, index) {
               final event = events[index];
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                padding: const EdgeInsets.fromLTRB(20.0, 0, 20.0, 16.0),
                 child: _buildEventCard(event,
                     isBookmarked: _bookmarkedEventIds.contains(event.id)),
               );

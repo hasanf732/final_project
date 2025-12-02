@@ -48,6 +48,7 @@ class _MapPageState extends State<MapPage> {
   Position? _currentPosition;
   final Map<String, BitmapDescriptor> _markerBitmaps = {};
   List<Place> _selectedClusterPlaces = [];
+  Place? _selectedPlace;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String? _selectedFilter;
@@ -201,20 +202,31 @@ class _MapPageState extends State<MapPage> {
                 mapToolbarEnabled: false,
                 onCameraMove: _manager.onCameraMove,
                 onCameraIdle: _manager.updateMap,
-                onTap: (_) => setState(() => _selectedClusterPlaces.clear()),
+                onTap: (_) {
+                  if (mounted) {
+                    setState(() {
+                      _selectedPlace = null;
+                      _selectedClusterPlaces.clear();
+                    });
+                  }
+                },
               ),
               _buildSearchAndFilterUI(),
-              if (_selectedClusterPlaces.isNotEmpty) _buildEventCarousel(bottomPadding),
+              if (_selectedClusterPlaces.isNotEmpty && _selectedPlace == null) 
+                _buildEventCarousel(bottomPadding),
             ],
           );
         },
       ),
-      floatingActionButton: Padding(
-        padding: EdgeInsets.only(bottom: _selectedClusterPlaces.isNotEmpty ? 150.0 + 20.0 : 80.0), // Adjust based on carousel visibility
-        child: FloatingActionButton(
-          onPressed: _animateToUser,
-          tooltip: 'My Location',
-          child: const Icon(Icons.my_location),
+      floatingActionButton: Visibility(
+        visible: _selectedPlace == null,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: _selectedClusterPlaces.isNotEmpty ? 150.0 + 20.0 : 80.0),
+          child: FloatingActionButton(
+            onPressed: _animateToUser,
+            tooltip: 'My Location',
+            child: const Icon(Icons.my_location),
+          ),
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -300,9 +312,153 @@ class _MapPageState extends State<MapPage> {
         markerId: MarkerId(place.id),
         position: place.location,
         icon: _markerBitmaps[place.id] ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-        onTap: () => _navigateToDetail(place),
+        onTap: () => _onMarkerTapped(place),
       );
     }
+  }
+
+  void _onMarkerTapped(Place place) {
+    setState(() {
+      _selectedPlace = place;
+    });
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => _buildEventPreviewSheet(place),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+    ).whenComplete(() {
+      setState(() {
+        _selectedPlace = null;
+      });
+    });
+  }
+
+  Widget _buildEventPreviewSheet(Place place) {
+    final theme = Theme.of(context);
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.5,
+      minChildSize: 0.3,
+      maxChildSize: 0.8,
+      builder: (_, controller) {
+        return Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: Column(
+            children: [
+              // Draggable handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.symmetric(vertical: 8.0),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[400],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: controller,
+                  padding: EdgeInsets.zero,
+                  children: [
+                    // Event Image
+                    if (place.imageUrl.isNotEmpty)
+                      SizedBox(
+                        height: screenHeight * 0.25,
+                        width: double.infinity,
+                        child: CachedNetworkImage(
+                          imageUrl: place.imageUrl,
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                          errorWidget: (context, url, error) => Container(
+                            color: Colors.grey.shade300,
+                            child: Icon(Icons.broken_image, color: Colors.grey.shade600),
+                          ),
+                        ),
+                      ),
+
+                    // Event Details
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            place.name,
+                            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Icon(Icons.category_outlined, size: 20, color: theme.colorScheme.primary),
+                              const SizedBox(width: 8),
+                              Text(
+                                place.category,
+                                style: theme.textTheme.titleMedium,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          if (place.document != null) ...[
+                            Row(
+                              children: [
+                                Icon(Icons.location_on_outlined, size: 20, color: theme.colorScheme.primary),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    (place.document!.data() as Map<String, dynamic>)['Location'] ?? 'No Location',
+                                    style: theme.textTheme.titleMedium,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              (place.document!.data() as Map<String, dynamic>)['Detail'] ?? 'No Details',
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyLarge,
+                            ),
+                          ],
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: () {
+                                Navigator.pop(context); // Dismiss the sheet
+                                _navigateToDetail(place);
+                              },
+                              child: const Text('View Full Details', style: TextStyle(fontSize: 16)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<Marker> _buildClusterMarker(cluster_manager.Cluster<Place> cluster) async {
@@ -312,7 +468,10 @@ class _MapPageState extends State<MapPage> {
       onTap: () {
         _controller.future.then((c) => c.animateCamera(CameraUpdate.newLatLngZoom(cluster.location, 17.5)));
         if (mounted) {
-          setState(() => _selectedClusterPlaces = cluster.items.toList());
+          setState(() {
+            _selectedPlace = null;
+            _selectedClusterPlaces = cluster.items.toList();
+          });
         }
       },
       icon: await _getClusterMarker(cluster.count, context),
@@ -411,7 +570,7 @@ class _MapPageState extends State<MapPage> {
             itemBuilder: (context, index) {
               final place = _selectedClusterPlaces[index];
               return GestureDetector(
-                onTap: () => _navigateToDetail(place),
+                onTap: () => _onMarkerTapped(place),
                 child: Container(
                   width: 280,
                   margin: const EdgeInsets.symmetric(horizontal: 8.0),
