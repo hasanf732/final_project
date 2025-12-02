@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:final_project/Pages/detail_page.dart';
+import 'package:final_project/Pages/map_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -106,7 +107,7 @@ class _MapPageState extends State<MapPage> {
           _markerBitmaps[place.id] = bitmap;
         }
       } catch (e) {
-        print("Error creating custom marker for ${place.name}: $e");
+        // Error creating custom marker
       }
     }
     _manager.updateMap();
@@ -122,7 +123,7 @@ class _MapPageState extends State<MapPage> {
         _animateToUser();
       }
     } catch (e) {
-      print("Error getting current location: $e");
+      // Error getting current location
     }
   }
 
@@ -142,10 +143,10 @@ class _MapPageState extends State<MapPage> {
       body: Stack(
         children: [
           GoogleMap(
+            style: isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
             mapType: MapType.normal,
             onMapCreated: (GoogleMapController controller) {
               _controller.complete(controller);
-              controller.setMapStyle(isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle);
               _manager.setMapId(controller.mapId);
             },
             initialCameraPosition: CameraPosition(

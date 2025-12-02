@@ -364,25 +364,31 @@ class _HomeState extends State<Home> {
     );
   }
 
-   Widget _buildFilteredList() {
+  Widget _buildFilteredList() {
+    Query query = FirebaseFirestore.instance.collection('News');
+
+    if (_selectedCategory != null && _selectedCategory!.isNotEmpty) {
+      query = query.where('Category', isEqualTo: _selectedCategory);
+    }
+    
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('News').snapshots(),
+      stream: query.snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) return SliverToBoxAdapter(child: _buildVerticalShimmer());
         if (!snapshot.hasData) return const SliverToBoxAdapter(child: Center(heightFactor: 5, child: Text("Loading events...")));
 
-        var eventDocs = snapshot.data!.docs.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          if (_searchQuery.isNotEmpty) {
-            return (data['Name'] as String? ?? '').toLowerCase().contains(_searchQuery.toLowerCase());
-          }
-          if (_selectedCategory != null) {
-            return (data['Category'] as String? ?? '') == _selectedCategory;
-          }
-          return false; 
-        }).toList();
+        var eventDocs = snapshot.data!.docs;
 
-        if (eventDocs.isEmpty) return const SliverToBoxAdapter(child: Center(heightFactor: 5, child: Text("No events found for your query.")));
+        if (_searchQuery.isNotEmpty) {
+          eventDocs = eventDocs.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return (data['Name'] as String? ?? '').toLowerCase().contains(_searchQuery.toLowerCase());
+          }).toList();
+        }
+
+        if (eventDocs.isEmpty) {
+          return const SliverToBoxAdapter(child: Center(heightFactor: 5, child: Text("No events found for your query.")));
+        }
 
         return SliverList(delegate: SliverChildBuilderDelegate((context, index) {
             final event = eventDocs[index];
