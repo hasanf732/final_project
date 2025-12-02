@@ -477,6 +477,7 @@ class EventStatisticsTab extends StatelessWidget {
   }
 }
 
+
 class ScanQrPage extends StatefulWidget {
   const ScanQrPage({super.key});
 
@@ -486,8 +487,6 @@ class ScanQrPage extends StatefulWidget {
 
 class _ScanQrPageState extends State<ScanQrPage> {
   final MobileScannerController _scannerController = MobileScannerController();
-  String? _scannedData;
-  bool _isValid = false;
   bool _isProcessing = false;
 
   @override
@@ -496,9 +495,40 @@ class _ScanQrPageState extends State<ScanQrPage> {
     super.dispose();
   }
 
+  void _showTicketDetails(BuildContext context,
+      {Map<String, dynamic>? userData, Map<String, dynamic>? eventData, required ScanStatus status}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (_, scrollController) {
+          return _TicketDetailsCard(
+            userData: userData,
+            eventData: eventData,
+            status: status,
+            scrollController: scrollController,
+          );
+        },
+      ),
+    ).whenComplete(() {
+      // Allow scanning again after the sheet is dismissed
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          setState(() {
+            _isProcessing = false;
+          });
+        }
+      });
+    });
+  }
+
   Future<void> _verifyQrCode(String data) async {
     if (_isProcessing) return;
-
     setState(() {
       _isProcessing = true;
     });
@@ -506,95 +536,189 @@ class _ScanQrPageState extends State<ScanQrPage> {
     try {
       final parts = data.split('_');
       if (parts.length != 2) {
-        setState(() {
-          _scannedData = "Invalid QR Code";
-          _isValid = false;
-        });
+        _showTicketDetails(context, status: ScanStatus.invalidQr);
         return;
       }
 
       final userId = parts[0];
       final eventId = parts[1];
+      final db = DatabaseMethods();
 
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
-      if (!userDoc.exists) {
-        setState(() {
-          _scannedData = "User not found";
-          _isValid = false;
-        });
+      final userDoc = await db.getUser(userId);
+      final eventDoc = await db.getEventById(eventId);
+
+      if (!userDoc.exists || !eventDoc.exists) {
+        _showTicketDetails(context, status: ScanStatus.notFound);
         return;
       }
 
-      final userData = userDoc.data()!;
+      final userData = userDoc.data() as Map<String, dynamic>;
+      final eventData = eventDoc.data() as Map<String, dynamic>;
       final bookedEvents = List<String>.from(userData['bookedEvents'] ?? []);
+      final attendedEvents = List<String>.from(userData['attendedEvents'] ?? []);
 
-      if (bookedEvents.contains(eventId)) {
-        await DatabaseMethods().markUserAsAttended(userId, eventId);
-        setState(() {
-          _scannedData = "Valid for ${userData['Name']}";
-          _isValid = true;
-        });
+      if (attendedEvents.contains(eventId)) {
+        _showTicketDetails(context, userData: userData, eventData: eventData, status: ScanStatus.alreadyScanned);
+      } else if (bookedEvents.contains(eventId)) {
+        await db.markUserAsAttended(userId, eventId);
+        _showTicketDetails(context, userData: userData, eventData: eventData, status: ScanStatus.valid);
       } else {
-        setState(() {
-          _scannedData = "Invalid Ticket for ${userData['Name']}";
-          _isValid = false;
-        });
+        _showTicketDetails(context, userData: userData, eventData: eventData, status: ScanStatus.invalidTicket);
       }
     } catch (e) {
-      setState(() {
-        _scannedData = "Error: $e";
-        _isValid = false;
-      });
-    } finally {
-      // Add a delay before allowing another scan to prevent rapid re-scans
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) {
-          setState(() {
-            _isProcessing = false;
-            _scannedData = null;
-          });
-        }
-      });
+      _showTicketDetails(context, status: ScanStatus.error);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Builder(builder: (context) {
-      return Stack(
-        children: [
-          MobileScanner(
-            controller: _scannerController,
-            onDetect: (capture) {
-              final List<Barcode> barcodes = capture.barcodes;
-              if (barcodes.isNotEmpty) {
-                final String? code = barcodes.first.rawValue;
-                if (code != null) {
-                  _verifyQrCode(code);
-                }
-              }
-            },
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        MobileScanner(
+          controller: _scannerController,
+          onDetect: (capture) {
+            final String? code = capture.barcodes.first.rawValue;
+            if (code != null) {
+              _verifyQrCode(code);
+            }
+          },
+        ),
+        // Visual Finder
+        Container(
+          width: 250,
+          height: 250,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.white, width: 4),
+            borderRadius: BorderRadius.circular(12),
           ),
-          if (_scannedData != null)
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                color: _isValid ? Colors.green : Colors.red,
-                child: Text(
-                  _scannedData!,
-                  style: TextStyle(color: theme.colorScheme.onPrimary, fontSize: 18),
-                  textAlign: TextAlign.center,
-                ),
-              ),
+        ),
+        if (_isProcessing)
+          Container(
+            width: 250,
+            height: 250,
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(8),
             ),
-          if (_isProcessing)
-            const Center(
-              child: CircularProgressIndicator(),
+            child: const Center(child: CircularProgressIndicator(color: Colors.white)),
+          ),
+      ],
+    );
+  }
+}
+
+enum ScanStatus { valid, invalidTicket, invalidQr, notFound, alreadyScanned, error }
+
+class _TicketDetailsCard extends StatelessWidget {
+  final Map<String, dynamic>? userData;
+  final Map<String, dynamic>? eventData;
+  final ScanStatus status;
+  final ScrollController scrollController;
+
+  const _TicketDetailsCard({
+    this.userData,
+    this.eventData,
+    required this.status,
+    required this.scrollController,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final (icon, color, title, message) = _getStatusInfo(status);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: ListView(
+          controller: scrollController,
+          children: [
+            // Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: color, size: 32),
+                const SizedBox(width: 12),
+                Text(title, style: theme.textTheme.headlineSmall?.copyWith(color: color, fontWeight: FontWeight.bold)),
+              ],
             ),
+            Text(message, textAlign: TextAlign.center, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 16),
+            const Divider(),
+
+            if (eventData != null) ...[
+              const SizedBox(height: 16),
+              Text("Event Details", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              _buildInfoRow(theme, Icons.event, 'Event', eventData!['Name'] ?? 'N/A'),
+              _buildInfoRow(
+                  theme, Icons.calendar_today, 'Date', _formatTimestamp(eventData!['Date'], 'EEE, MMM d, yyyy')),
+              _buildInfoRow(theme, Icons.access_time, 'Time', _formatTimestamp(eventData!['Date'], 'h:mm a')),
+              _buildInfoRow(theme, Icons.location_on, 'Location', eventData!['Location'] ?? 'N/A'),
+              const SizedBox(height: 16),
+              const Divider(),
+            ],
+
+            if (userData != null) ...[
+              const SizedBox(height: 16),
+              Text("User Information", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              _buildInfoRow(theme, Icons.person, 'Name', userData!['Name'] ?? 'N/A'),
+              _buildInfoRow(theme, Icons.email, 'Email', (userData!['Email'] ?? userData!['email']) ?? 'N/A'),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(ThemeData theme, IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: theme.colorScheme.primary, size: 20),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: theme.textTheme.labelLarge?.copyWith(color: Colors.grey[600])),
+                const SizedBox(height: 2),
+                Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
         ],
-      );
-    });
+      ),
+    );
+  }
+
+  (IconData, Color, String, String) _getStatusInfo(ScanStatus status) {
+    switch (status) {
+      case ScanStatus.valid:
+        return (Icons.check_circle, Colors.green, "Access Granted", "User is validated for this event.");
+      case ScanStatus.invalidTicket:
+        return (Icons.cancel, Colors.red, "Invalid Ticket", "This user has not booked this event.");
+      case ScanStatus.alreadyScanned:
+        return (Icons.history, Colors.orange, "Already Scanned", "This ticket has already been used.");
+      case ScanStatus.notFound:
+        return (Icons.error, Colors.red, "Not Found", "The user or event associated with this QR code could not be found.");
+      case ScanStatus.invalidQr:
+        return (Icons.qr_code_scanner, Colors.red, "Invalid QR Code", "The scanned QR code is not in the correct format.");
+      case ScanStatus.error:
+        return (Icons.report_problem, Colors.red, "System Error", "An unexpected error occurred during verification.");
+    }
+  }
+
+  String _formatTimestamp(Timestamp? timestamp, String format) {
+    if (timestamp == null) return 'N/A';
+    return DateFormat(format).format(timestamp.toDate());
   }
 }
