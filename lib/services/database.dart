@@ -7,12 +7,31 @@ class DatabaseMethods {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  Future<bool> isAdmin() async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    final userDoc = await _firestore.collection('users').doc(user.uid).get();
+    if (!userDoc.exists || userDoc.data() == null) return false;
+    return userDoc.data()!['isAdmin'] == true;
+  }
+
+  Future<void> deleteEvent(String eventId) async {
+    await _firestore.collection('News').doc(eventId).delete();
+  }
+
+  Future<void> updateEvent(String eventId, Map<String, dynamic> eventData) async {
+    await _firestore.collection('News').doc(eventId).update(eventData);
+  }
+
   Future<void> addUserDetail(Map<String, dynamic> userinfoMap, String id) async {
     await _firestore.collection("users").doc(id).set(userinfoMap, SetOptions(merge: true));
   }
 
   Future<void> addNews(
       Uint8List imageBytes, String name, String detail, String location, double latitude, double longitude, DateTime dateTime, String category) async {
+    final user = _auth.currentUser;
+    if (user == null) return; // Or handle appropriately
+
     String fileName = 'event_images/${DateTime.now().millisecondsSinceEpoch}.png';
     Reference storageRef = FirebaseStorage.instance.ref().child(fileName);
     UploadTask uploadTask = storageRef.putData(imageBytes);
@@ -29,12 +48,17 @@ class DatabaseMethods {
       'Image': imageUrl,
       'createdAt': FieldValue.serverTimestamp(),
       'Category': category,
+      'creatorId': user.uid, // Add this line
     };
 
     await _firestore.collection("News").add(eventData);
   }
 
   Stream<QuerySnapshot> getEventDetails() {
+    return _firestore.collection("News").snapshots();
+  }
+
+  Stream<QuerySnapshot> getAdminEventDetails() {
     return _firestore.collection("News").snapshots();
   }
 

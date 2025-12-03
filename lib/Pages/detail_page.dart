@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:final_project/Pages/EditEventPage.dart';
+import 'package:final_project/Pages/qr_display_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -37,6 +39,8 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   bool _isFavorite = false;
   bool _isTogglingFavorite = false;
   Timer? _reviewRequestTimer;
+  bool _isAdmin = false;
+  String? _creatorId;
 
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
@@ -48,6 +52,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     _getRatingAndReviews();
     _listenToUserEvents();
     _checkIfFavorite();
+    _checkAdminStatus();
 
     _animationController = AnimationController(
       vsync: this,
@@ -71,6 +76,15 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     _animationController.dispose();
     _userEventsSubscription?.cancel();
     super.dispose();
+  }
+
+  Future<void> _checkAdminStatus() async {
+    bool isAdmin = await DatabaseMethods().isAdmin();
+    if (mounted) {
+      setState(() {
+        _isAdmin = isAdmin;
+      });
+    }
   }
 
   void _showReviewDialog() {
@@ -152,6 +166,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     DocumentSnapshot doc = await FirebaseFirestore.instance.collection("News").doc(widget.id).get();
     if (doc.exists && doc.data() != null) {
       Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+      _creatorId = data['creatorId'];
       if (data.containsKey('ratings')) {
         Map<String, dynamic> ratings = data['ratings'];
         List<Map<String, dynamic>> reviewsList = [];
@@ -197,7 +212,15 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                     _buildStatusBadge('Attended', theme.colorScheme.secondary)
                   else if (_isRegistered)
                     _buildStatusBadge('Registered', theme.colorScheme.primary),
+                  const SizedBox(height: 20.0),
+
+                  _buildInfoRow(theme, Icons.calendar_today_outlined, widget.date),
                   const SizedBox(height: 10.0),
+                  _buildInfoRow(theme, Icons.access_time_outlined, widget.time),
+                  const SizedBox(height: 10.0),
+                  _buildInfoRow(theme, Icons.location_on_outlined, widget.location),
+
+                  const SizedBox(height: 30.0),
                   Text("About Event", style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10.0),
                   Text(widget.detail, style: theme.textTheme.bodyLarge),
@@ -216,6 +239,9 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   }
 
   Widget _buildSliverAppBar(ThemeData theme) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final bool canEdit = _isAdmin && (_creatorId == null || _creatorId == currentUser?.uid);
+
     return SliverAppBar(
       expandedHeight: MediaQuery.of(context).size.height / 2.5,
       pinned: true,
@@ -256,6 +282,60 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
         ),
       ),
        actions: [
+         if (canEdit)
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: CircleAvatar(
+              backgroundColor: theme.colorScheme.surface.withOpacity(0.8),
+              child: IconButton(
+                icon: const Icon(Icons.edit, color: Colors.blue),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditEventPage(eventId: widget.id),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        if (canEdit)
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: CircleAvatar(
+              backgroundColor: theme.colorScheme.surface.withOpacity(0.8),
+              child: IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red),
+                onPressed: () async {
+                  final bool? confirmed = await showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Delete Event'),
+                      content: const Text('Are you sure you want to delete this event?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('No'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: const Text('Yes'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirmed == true) {
+                    await DatabaseMethods().deleteEvent(widget.id);
+                    if (mounted) {
+                       Navigator.of(context).pop();
+                    }
+                  }
+                },
+              ),
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.only(right: 16.0, top: 8, bottom: 8),
           child: CircleAvatar(
@@ -272,6 +352,16 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(ThemeData theme, IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: theme.colorScheme.primary),
+        const SizedBox(width: 12),
+        Expanded(child: Text(text, style: theme.textTheme.titleMedium)),
       ],
     );
   }
@@ -298,16 +388,20 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                         )
                       : Row(
                           children: [
-                            RatingBarIndicator(
-                              rating: _averageRating,
-                              itemBuilder: (context, index) => const Icon(Icons.star, color: Colors.amber),
-                              itemCount: 5,
-                              itemSize: 20.0,
-                              direction: Axis.horizontal,
-                            ),
+                            if (_totalRatings > 0)
+                              RatingBarIndicator(
+                                rating: _averageRating,
+                                itemBuilder: (context, index) => const Icon(Icons.star, color: Colors.amber),
+                                itemCount: 5,
+                                itemSize: 20.0,
+                                direction: Axis.horizontal,
+                              ),
                             const SizedBox(width: 10),
                             Flexible(
-                              child: Text("($_totalRatings Reviews)", style: theme.textTheme.bodyMedium),
+                              child: Text(
+                                _totalRatings > 0 ? '($_totalRatings Reviews)' : 'No reviews yet',
+                                style: theme.textTheme.bodyMedium,
+                              ),
                             )
                           ],
                         ),
@@ -410,7 +504,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
 
   Widget _buildReviewList(ThemeData theme) {
     if (_reviews.isEmpty) {
-      return const Center(child: Padding(padding: EdgeInsets.all(20.0), child: Text("No reviews yet.")));
+      return const Center(child: Padding(padding: const EdgeInsets.all(20.0), child: Text("Be the first to review!")));
     }
     return ListView.builder(
       shrinkWrap: true,
@@ -475,22 +569,58 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   }
 
   Widget _buildRegisterButton(ThemeData theme) {
+    if (_isAttended) {
+      return ElevatedButton(
+        onPressed: null, // Attended events have no action
+        style: ElevatedButton.styleFrom(
+          minimumSize: const Size(double.infinity, 50),
+          backgroundColor: Colors.grey.shade600,
+        ),
+        child: const Text("Attended"),
+      );
+    }
+    
+    if (_isRegistered) {
+      return ElevatedButton(
+        onPressed: () {
+          final user = FirebaseAuth.instance.currentUser;
+          if (user != null) {
+            String qrData = "${user.uid}_${widget.id}";
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => QrDisplayPage(
+                  qrData: qrData,
+                  eventName: widget.name,
+                  eventDate: widget.date,
+                  eventLocation: widget.location,
+                ),
+              ),
+            );
+          }
+        },
+        style: ElevatedButton.styleFrom(
+          minimumSize: const Size(double.infinity, 50),
+          backgroundColor: theme.colorScheme.secondary, // A different color to show it's a different state
+          foregroundColor: theme.colorScheme.onSecondary,
+        ),
+        child: const Text("Show QR Code"),
+      );
+    }
+
     return ElevatedButton(
-      onPressed: _isRegistered
-          ? null
-          : () async {
-              await DatabaseMethods().registerForEvent(widget.id);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  backgroundColor: Colors.green,
-                  content: Text("Successfully registered for the event!")));
-            },
+      onPressed: () async {
+        await DatabaseMethods().registerForEvent(widget.id);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            backgroundColor: Colors.green,
+            content: Text("Successfully registered for the event!")));
+      },
       style: ElevatedButton.styleFrom(
         minimumSize: const Size(double.infinity, 50),
         backgroundColor: theme.colorScheme.primary,
         foregroundColor: theme.colorScheme.onPrimary,
-        disabledBackgroundColor: Colors.grey.shade600,
       ),
-      child: Text(_isAttended ? "Attended" : (_isRegistered ? "Already Registered" : "Register Now")),
+      child: const Text("Register Now"),
     );
   }
 
@@ -507,5 +637,4 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
       ),
     );
   }
-
 }

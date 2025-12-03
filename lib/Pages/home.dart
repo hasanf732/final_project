@@ -28,9 +28,10 @@ class _HomeState extends State<Home> {
   StreamSubscription? _positionStreamSubscription;
   StreamSubscription? _userEventsSubscription;
 
+  Stream<List<MapEntry<DocumentSnapshot, double>>>? _nearestEventsStream;
+  Stream<List<DocumentSnapshot>>? _discoverEventsStream;
   Stream<List<DocumentSnapshot>>? _hotEventsStream;
   Stream<List<DocumentSnapshot>>? _topRatedEventsStream;
-  Stream<List<DocumentSnapshot>>? _nearestEventsStream;
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
@@ -83,6 +84,7 @@ class _HomeState extends State<Home> {
   }
 
   void _initializeStreams() {
+    _discoverEventsStream = discoverEventsStream();
     _hotEventsStream = hotEventsStream();
     _topRatedEventsStream = topRatedEventsStream();
     _nearestEventsStream = nearestEventsStream();
@@ -202,6 +204,19 @@ class _HomeState extends State<Home> {
       }
     });
   }
+  
+  List<DocumentSnapshot> _filterUpcomingEvents(List<DocumentSnapshot> events) {
+    final now = DateTime.now();
+    final startOfToday = DateTime(now.year, now.month, now.day);
+    return events.where((doc) {
+      final data = doc.data() as Map<String, dynamic>?;
+      if (data == null || data['Date'] == null) {
+        return false;
+      }
+      final eventDate = (data['Date'] as Timestamp).toDate();
+      return !eventDate.isBefore(startOfToday);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -262,6 +277,8 @@ class _HomeState extends State<Home> {
           if (isSearching || isFiltering)
             _buildFilteredList()
           else ...[
+            _buildSectionHeader("Discover 🚀"),
+            _buildHorizontalEventsList(_discoverEventsStream),
             _buildSectionHeader("What's Hot 🔥"),
             _buildHorizontalEventsList(_hotEventsStream),
             _buildSectionHeader("Top Rated ⭐"),
@@ -275,16 +292,31 @@ class _HomeState extends State<Home> {
     );
   }
 
+  Stream<List<DocumentSnapshot>> discoverEventsStream() {
+    return DatabaseMethods().getEventDetails().map((snapshot) {
+      var docs = _filterUpcomingEvents(snapshot.docs);
+      docs.sort((a, b) {
+        var aDate = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+        var bDate = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+        if (aDate == null && bDate == null) return 0;
+        if (aDate == null) return 1;
+        if (bDate == null) return -1;
+        return bDate.compareTo(aDate);
+      });
+      return docs.take(7).toList();
+    });
+  }
+
   Stream<List<DocumentSnapshot>> hotEventsStream() {
-    return FirebaseFirestore.instance.collection('News').snapshots().map((snapshot) {
-      var docs = snapshot.docs.where((doc) {
-        final data = doc.data();
+    return DatabaseMethods().getEventDetails().map((snapshot) {
+      var docs = _filterUpcomingEvents(snapshot.docs).where((doc) {
+        final data = doc.data() as Map<String, dynamic>;
         return data.containsKey('ratings') && (data['ratings'] as Map).isNotEmpty;
       }).toList();
 
       docs.sort((a, b) {
-        var aRatings = a.data()['ratings']?.length ?? 0;
-        var bRatings = b.data()['ratings']?.length ?? 0;
+        var aRatings = (a.data() as Map<String, dynamic>)['ratings']?.length ?? 0;
+        var bRatings = (b.data() as Map<String, dynamic>)['ratings']?.length ?? 0;
         return bRatings.compareTo(aRatings);
       });
 
@@ -293,9 +325,9 @@ class _HomeState extends State<Home> {
   }
 
   Stream<List<DocumentSnapshot>> topRatedEventsStream() {
-    return FirebaseFirestore.instance.collection('News').snapshots().map((snapshot) {
-      var docsWithRatings = snapshot.docs.map((doc) {
-        final data = doc.data();
+    return DatabaseMethods().getEventDetails().map((snapshot) {
+      var docsWithRatings = _filterUpcomingEvents(snapshot.docs).map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
         final double avgRating = _calculateAverageRating(data['ratings']);
         return MapEntry(doc, avgRating);
       }).where((entry) => entry.value > 0).toList();
@@ -306,32 +338,33 @@ class _HomeState extends State<Home> {
     });
   }
 
-  Stream<List<DocumentSnapshot>> nearestEventsStream() {
-    return FirebaseFirestore.instance.collection('News').snapshots().map((snapshot) {
-      if (_currentPosition == null) return [];
+  Stream<List<MapEntry<DocumentSnapshot, double>>> nearestEventsStream() {
+  return DatabaseMethods().getEventDetails().map((snapshot) {
+    if (_currentPosition == null) return [];
 
-      var docsWithDistances = snapshot.docs.map((doc) {
-        final data = doc.data();
-        final lat = data['latitude'];
-        final lon = data['longitude'];
+    var docsWithDistances = _filterUpcomingEvents(snapshot.docs).map((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      final lat = data['latitude'];
+      final lon = data['longitude'];
 
-        if (lat is num && lon is num) {
-          final distance = Geolocator.distanceBetween(
-            _currentPosition!.latitude,
-            _currentPosition!.longitude,
-            lat.toDouble(),
-            lon.toDouble(),
-          );
-          return MapEntry(doc, distance);
-        }
-        return null;
-      }).whereType<MapEntry<DocumentSnapshot, double>>().toList();
+      if (lat is num && lon is num) {
+        final distance = Geolocator.distanceBetween(
+          _currentPosition!.latitude,
+          _currentPosition!.longitude,
+          lat.toDouble(),
+          lon.toDouble(),
+        );
+        return MapEntry(doc, distance);
+      }
+      return null;
+    }).whereType<MapEntry<DocumentSnapshot, double>>().toList();
 
-      docsWithDistances.sort((a, b) => a.value.compareTo(b.value));
+    docsWithDistances.sort((a, b) => a.value.compareTo(b.value));
 
-      return docsWithDistances.map((entry) => entry.key).take(2).toList();
-    });
-  }
+    return docsWithDistances.take(2).toList();
+  });
+}
+
 
   double _calculateAverageRating(Map<String, dynamic>? ratings) {
     if (ratings == null || ratings.isEmpty) return 0.0;
@@ -358,7 +391,7 @@ class _HomeState extends State<Home> {
           );
         }
 
-        List<DocumentSnapshot> events = snapshot.data!.docs;
+        List<DocumentSnapshot> events = _filterUpcomingEvents(snapshot.data!.docs);
 
         // Apply category filtering
         if (_selectedCategory != null) {
@@ -456,40 +489,46 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Widget _buildVerticalEventsList(Stream<List<DocumentSnapshot>>? stream) {
-    if (stream == null) {
-      return const SliverToBoxAdapter(child: SizedBox.shrink());
-    }
-    return StreamBuilder<List<DocumentSnapshot>>(
-      stream: stream,
-      builder: (context, snapshot) {
-        if (_currentPosition == null) {
-          return const SliverToBoxAdapter(
-              child: Center(
-                  heightFactor: 5,
-                  child: Text("Enable location to see nearby events.")));
-        }
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return SliverToBoxAdapter(child: _buildVerticalShimmer());
-        }
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return const SliverToBoxAdapter(
-              child: Center(heightFactor: 5, child: Text("No events nearby.")));
-        }
-
-        return SliverList(
-            delegate: SliverChildBuilderDelegate((context, index) {
-          final event = snapshot.data![index];
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(20.0, 0, 20.0, 16.0),
-            child: _buildEventCard(event,
-                isBookmarked: _bookmarkedEventIds.contains(event.id),
-                isFeatured: false),
-          );
-        }, childCount: snapshot.data!.length));
-      },
-    );
+  Widget _buildVerticalEventsList(Stream<List<MapEntry<DocumentSnapshot, double>>>? stream) {
+  if (stream == null) {
+    return const SliverToBoxAdapter(child: SizedBox.shrink());
   }
+  return StreamBuilder<List<MapEntry<DocumentSnapshot, double>>>(
+    stream: stream,
+    builder: (context, snapshot) {
+      if (_currentPosition == null) {
+        return const SliverToBoxAdapter(
+            child: Center(
+                heightFactor: 5,
+                child: Text("Enable location to see nearby events.")));
+      }
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return SliverToBoxAdapter(child: _buildVerticalShimmer());
+      }
+      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+        return const SliverToBoxAdapter(
+            child: Center(heightFactor: 5, child: Text("No events nearby.")));
+      }
+
+      return SliverList(
+          delegate: SliverChildBuilderDelegate((context, index) {
+        final eventEntry = snapshot.data![index];
+        final event = eventEntry.key;
+        final distance = eventEntry.value; // in meters
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20.0, 0, 20.0, 16.0),
+          child: _buildEventCard(
+            event,
+            isBookmarked: _bookmarkedEventIds.contains(event.id),
+            isFeatured: false,
+            distance: distance,
+          ),
+        );
+      }, childCount: snapshot.data!.length));
+    },
+  );
+}
+
 
   Widget _buildCategorySelector() {
     return SizedBox(
@@ -554,136 +593,145 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Widget _buildEventCard(DocumentSnapshot event,
-      {bool isBookmarked = false, bool isFeatured = false}) {
-    final data = event.data() as Map<String, dynamic>;
-    final theme = Theme.of(context);
+  Widget _buildEventCard(DocumentSnapshot event, {bool isBookmarked = false, bool isFeatured = false, double? distance}) {
+  final data = event.data() as Map<String, dynamic>;
+  final theme = Theme.of(context);
 
-    final date = data['Date']?.toDate();
-    final String formattedDate =
-        date != null ? DateFormat('MMM dd, yyyy').format(date) : "Date N/A";
+  final date = data['Date']?.toDate();
+  final String formattedDate = date != null ? DateFormat('MMM dd, yyyy').format(date) : "Date N/A";
+  final String formattedTime = date != null ? DateFormat('h:mm a').format(date) : "";
 
-    final cardWidth = isFeatured ? 280.0 : null;
+  final cardWidth = isFeatured ? 280.0 : null;
 
-    final card = Material(
-      color: theme.cardColor,
+  final card = Material(
+    color: theme.cardColor,
+    borderRadius: BorderRadius.circular(16),
+    elevation: 2,
+    shadowColor: Colors.black.withAlpha(26),
+    child: InkWell(
       borderRadius: BorderRadius.circular(16),
-      elevation: 2,
-      shadowColor: Colors.black.withAlpha(26),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (context) => DetailPage(
-                        id: event.id,
-                        image: data['Image'] ?? '',
-                        name: data['Name'] ?? 'Untitled Event',
-                        date: formattedDate,
-                        location: data['Location'] ?? 'No location',
-                        detail: data['Detail'] ?? '',
-                        time: data['Time'] ?? '',
-                      )));
-        },
-        child: SizedBox(
-          width: cardWidth,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(16),
-                      topRight: Radius.circular(16),
-                    ),
-                    child: Image.network(
-                      data['Image'] ??
-                          'https://via.placeholder.com/280x120',
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DetailPage(
+              id: event.id,
+              image: data['Image'] ?? '',
+              name: data['Name'] ?? 'Untitled Event',
+              date: formattedDate,
+              location: data['Location'] ?? 'No location',
+              detail: data['Detail'] ?? '',
+              time: formattedTime,
+            ),
+          ),
+        );
+      },
+      child: SizedBox(
+        width: cardWidth,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                  child: Image.network(
+                    data['Image'] ?? 'https://via.placeholder.com/280x120',
+                    height: 120,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Container(
                       height: 120,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Container(
-                        height: 120,
-                        color: Colors.grey[300],
-                        child: const Icon(Icons.image_not_supported,
-                            color: Colors.grey),
+                      color: Colors.grey[300],
+                      child: const Icon(Icons.image_not_supported, color: Colors.grey),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: GestureDetector(
+                    onTap: () => _toggleBookmark(event.id),
+                    child: CircleAvatar(
+                      backgroundColor: Colors.black.withAlpha(102),
+                      radius: 18,
+                      child: Icon(
+                        isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+                        color: isBookmarked ? theme.colorScheme.primary : Colors.white,
+                        size: 22,
                       ),
                     ),
                   ),
+                ),
+                if (distance != null)
                   Positioned(
-                    top: 8,
-                    right: 8,
-                    child: GestureDetector(
-                      onTap: () => _toggleBookmark(event.id),
-                      child: CircleAvatar(
-                        backgroundColor: Colors.black.withAlpha(102),
-                        radius: 18,
-                        child: Icon(
-                          isBookmarked
-                              ? Icons.bookmark
-                              : Icons.bookmark_border,
-                          color: isBookmarked
-                              ? theme.colorScheme.primary
-                              : Colors.white,
-                          size: 22,
-                        ),
+                    bottom: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${(distance / 1000).toStringAsFixed(1)} km away',
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
                       ),
                     ),
+                  ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    data['Name'] ?? 'Untitled Event',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(Icons.calendar_today, size: 14, color: theme.colorScheme.primary),
+                      const SizedBox(width: 6),
+                      Text(formattedDate, style: theme.textTheme.bodySmall),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.location_on, size: 14, color: theme.colorScheme.primary),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          data['Location'] ?? 'No location',
+                          style: theme.textTheme.bodySmall,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      data['Name'] ?? 'Untitled Event',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Icon(Icons.calendar_today,
-                            size: 14, color: theme.colorScheme.primary),
-                        const SizedBox(width: 6),
-                        Text(formattedDate, style: theme.textTheme.bodySmall),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(Icons.location_on,
-                            size: 14, color: theme.colorScheme.primary),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            data['Location'] ?? 'No location',
-                            style: theme.textTheme.bodySmall,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-    );
+    ),
+  );
 
-    return isFeatured
-        ? Padding(padding: const EdgeInsets.only(right: 16), child: card)
-        : card;
-  }
+  return isFeatured
+      ? Padding(padding: const EdgeInsets.only(right: 16), child: card)
+      : card;
+}
+
 
   Widget _buildHorizontalShimmer() {
     return SizedBox(

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/Pages/location_picker_page.dart';
 import 'package:final_project/services/database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -371,6 +372,11 @@ class EventStatisticsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      return const Center(child: Text("You must be logged in to view statistics."));
+    }
+
     return StreamBuilder<Map<String, int>>(
       stream: DatabaseMethods().getEventRegistrationCounts(),
       builder: (context, regCountSnapshot) {
@@ -396,7 +402,7 @@ class EventStatisticsTab extends StatelessWidget {
             final attendanceCounts = attendanceSnapshot.data ?? {};
 
             return StreamBuilder<QuerySnapshot>(
-              stream: DatabaseMethods().getEventDetails(),
+              stream: DatabaseMethods().getAdminEventDetails(),
               builder: (context, eventSnapshot) {
                 if (eventSnapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -405,14 +411,23 @@ class EventStatisticsTab extends StatelessWidget {
                   return Center(child: Text("Error: ${eventSnapshot.error}"));
                 }
                 if (!eventSnapshot.hasData || eventSnapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text("No events have been created yet."));
+                  return const Center(child: Text("You have not created any events yet."));
+                }
+
+                final filteredDocs = eventSnapshot.data!.docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return data['creatorId'] == currentUser.uid;
+                }).toList();
+
+                if (filteredDocs.isEmpty) {
+                  return const Center(child: Text("You have not created any events yet."));
                 }
 
                 return ListView.builder(
                   padding: const EdgeInsets.all(8.0),
-                  itemCount: eventSnapshot.data!.docs.length,
+                  itemCount: filteredDocs.length,
                   itemBuilder: (context, index) {
-                    var eventDoc = eventSnapshot.data!.docs[index];
+                    var eventDoc = filteredDocs[index];
                     var eventData = eventDoc.data() as Map<String, dynamic>;
                     var eventName = eventData['Name'] ?? 'Unnamed Event';
                     var ratings = eventData['ratings'] as Map<String, dynamic>? ?? {};

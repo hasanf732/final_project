@@ -41,7 +41,16 @@ class _FavoritesPageState extends State<FavoritesPage> {
           for (String eventId in favoriteEventIds) {
             futureDocs.add(DatabaseMethods().getEventById(eventId));
           }
-          return await Future.wait(futureDocs);
+          var events = await Future.wait(futureDocs);
+          
+          final now = DateTime.now();
+          final startOfToday = DateTime(now.year, now.month, now.day);
+          return events.where((event) {
+            if (!event.exists) return false;
+            final data = event.data() as Map<String, dynamic>;
+            final eventDate = (data['Date'] as Timestamp).toDate();
+            return !eventDate.isBefore(startOfToday);
+          }).toList();
         });
       });
     }
@@ -79,6 +88,10 @@ class _FavoritesPageState extends State<FavoritesPage> {
             itemBuilder: (context, index) {
               var eventData = favoriteDocs[index].data() as Map<String, dynamic>;
               var eventId = favoriteDocs[index].id;
+              final date = eventData['Date']?.toDate();
+              final String formattedDate = date != null ? DateFormat('MMM dd, yyyy').format(date) : "Date N/A";
+              final String formattedTime = date != null ? DateFormat('h:mm a').format(date) : "";
+
               return Card(
                 margin: const EdgeInsets.only(bottom: 16.0),
                 child: ListTile(
@@ -107,10 +120,10 @@ class _FavoritesPageState extends State<FavoritesPage> {
                           id: eventId,
                           image: eventData['Image'] ?? '',
                           name: eventData['Name'] ?? 'Untitled Event',
-                          date: eventData['Date'] != null ? DateFormat('yyyy-MM-dd').format((eventData['Date'] as Timestamp).toDate()) : '',
+                          date: formattedDate,
                           location: eventData['Location'] ?? 'No location specified',
                           detail: eventData['Detail'] ?? 'No details available',
-                          time: eventData['Time'] ?? 'No time specified',
+                          time: formattedTime,
                         ),
                       ),
                     );

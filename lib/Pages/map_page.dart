@@ -9,6 +9,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_maps_cluster_manager_2/google_maps_cluster_manager_2.dart' as cluster_manager;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:intl/intl.dart';
 
 class Place with cluster_manager.ClusterItem {
   final String id;
@@ -104,27 +105,38 @@ class _MapPageState extends State<MapPage> {
   Future<void> _fetchEventLocations() async {
     final querySnapshot = await FirebaseFirestore.instance.collection('News').get();
     final List<Place> newItems = [];
+
+    final now = DateTime.now();
+    final startOfToday = DateTime(now.year, now.month, now.day);
+
     for (var result in querySnapshot.docs) {
       final data = result.data();
-      final lat = data['latitude'];
-      final lon = data['longitude'];
+      final eventDate = (data['Date'] as Timestamp?)?.toDate();
 
-      if (lat != null && lon != null) {
-        newItems.add(Place(
-          id: result.id,
-          name: data['Name'] ?? 'No Name',
-          imageUrl: data['Image'] ?? '',
-          latLng: LatLng(lat, lon),
-          category: data['Category'] ?? 'Unknown',
-          rating: 0.0, // Placeholder for rating
-          document: result,
-        ));
+      // Only include events that are today or in the future
+      if (eventDate != null && !eventDate.isBefore(startOfToday)) {
+        final lat = data['latitude'];
+        final lon = data['longitude'];
+
+        if (lat != null && lon != null) {
+          newItems.add(Place(
+            id: result.id,
+            name: data['Name'] ?? 'No Name',
+            imageUrl: data['Image'] ?? '',
+            latLng: LatLng(lat, lon),
+            category: data['Category'] ?? 'Unknown',
+            rating: 0.0, // Placeholder for rating
+            document: result,
+          ));
+        }
       }
     }
 
-    setState(() {
-      _allPlaces = newItems;
-    });
+    if (mounted) {
+      setState(() {
+        _allPlaces = newItems;
+      });
+    }
 
     _manager.setItems(newItems);
     _createMarkerBitmaps(newItems);
@@ -141,9 +153,11 @@ class _MapPageState extends State<MapPage> {
       searchDropdownResults = [];
     }
 
-    setState(() {
+    if (mounted) {
+      setState(() {
       _searchResults = searchDropdownResults;
     });
+    }
 
     if (_selectedFilter != null && _selectedFilter != 'All') {
       placesToShowOnMap = placesToShowOnMap.where((p) => p.category == _selectedFilter).toList();
@@ -628,7 +642,7 @@ class _MapPageState extends State<MapPage> {
           builder: (context) => DetailPage(
             image: data['Image'] ?? '',
             name: data['Name'] ?? 'No Name',
-            date: data['Date'] != null ? (data['Date'] as Timestamp).toDate().toString() : 'No Date',
+            date: data['Date'] != null ? DateFormat('yyyy-MM-dd').format((data['Date'] as Timestamp).toDate()) : '',
             location: data['Location'] ?? 'No Location',
             detail: data['Detail'] ?? 'No Details',
             time: data['Time'] ?? 'No Time',
@@ -705,7 +719,7 @@ class _MapPageState extends State<MapPage> {
       ..strokeWidth = 3;
     canvas.drawCircle(const Offset(size / 2, size / 2), size / 2 - 4, borderPaint);
 
-    TextPainter textPainter = TextPainter(textDirection: TextDirection.ltr);
+    TextPainter textPainter = TextPainter(textDirection: ui.TextDirection.ltr);
     textPainter.text = TextSpan(
       text: count.toString(),
       style: TextStyle(

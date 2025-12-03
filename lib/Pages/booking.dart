@@ -1,7 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/Pages/detail_page.dart';
-import 'package:final_project/Pages/qr_display_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -95,37 +94,37 @@ class BookedEventsList extends StatelessWidget {
             if (!eventSnapshot.hasData || eventSnapshot.data!.docs.isEmpty) {
               return const Center(child: Text("No event details found."));
             }
+            
+            final now = DateTime.now();
+            final startOfToday = DateTime(now.year, now.month, now.day);
+            var filteredDocs = eventSnapshot.data!.docs.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final eventDate = (data['Date'] as Timestamp).toDate();
+              return !eventDate.isBefore(startOfToday);
+            }).toList();
+
+            if (filteredDocs.isEmpty) {
+              return Center(child: Text("No recent events in this category."));
+            }
 
             return ListView.builder(
               padding: const EdgeInsets.all(16.0),
-              itemCount: eventSnapshot.data!.docs.length,
+              itemCount: filteredDocs.length,
               itemBuilder: (context, index) {
-                final event = eventSnapshot.data!.docs[index];
+                final event = filteredDocs[index];
                 final data = event.data() as Map<String, dynamic>;
                 DateTime? eventDate;
                 final dateData = data['Date'];
                 String eventDateStr = '';
+                String eventTimeStr = '';
                 if (dateData is Timestamp) {
                   eventDate = dateData.toDate();
                   eventDateStr = DateFormat('yyyy-MM-dd').format(eventDate);
+                  eventTimeStr = DateFormat('h:mm a').format(eventDate);
                 }
                 return GestureDetector(
                   onTap: () {
-                    if (status == 'bookedEvents') {
-                      String qrData = "${user.uid}_${event.id}";
                       Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => QrDisplayPage(
-                            qrData: qrData,
-                            eventName: data['Name'] ?? 'Untitled Event',
-                            eventDate: eventDateStr,
-                            eventLocation: data['Location'] ?? 'No location specified',
-                          ),
-                        ),
-                      );
-                    } else {
-                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (context) => DetailPage(
@@ -135,11 +134,10 @@ class BookedEventsList extends StatelessWidget {
                             date: eventDateStr,
                             location: data['Location'] ?? 'No location specified',
                             detail: data['Detail'] ?? 'No details available',
-                            time: data['Time'] ?? 'No time specified',
+                            time: eventTimeStr,
                           ),
                         ),
                       );
-                    }
                   },
                   child: Card(
                     child: Padding(
