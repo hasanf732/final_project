@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:final_project/auth_wrapper.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -50,14 +49,15 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
     return Scaffold(
       body: Center(
         child: ScaleTransition(
           scale: _scaleAnimation,
           child: Image.asset(
             'Images/Logo.png',
-            width: screenWidth * 0.6, // Fills a large portion of the screen
+            fit: BoxFit.fill, 
+            width: double.infinity,
+            height: double.infinity,
           ),
         ),
       ),

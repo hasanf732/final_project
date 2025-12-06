@@ -6,33 +6,13 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_maps_flutter_android/google_maps_flutter_android.dart';
-import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
 import 'package:provider/provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize the Google Maps renderer before the app starts.
-  final GoogleMapsFlutterPlatform mapsImplementation = GoogleMapsFlutterPlatform.instance;
-  if (mapsImplementation is GoogleMapsFlutterAndroid) {
-    try {
-      await mapsImplementation.initializeWithRenderer(AndroidMapRenderer.latest);
-    } on PlatformException catch (e) {
-      if (e.code == 'Renderer already initialized') {
-        print('Google Maps renderer already initialized. Ignoring on hot restart.');
-      } else {
-        print('Failed to initialize with latest renderer: $e. Falling back to legacy.');
-        try {
-          await mapsImplementation.initializeWithRenderer(AndroidMapRenderer.legacy);
-        } on PlatformException catch (e2) {
-          print('Failed to initialize with legacy renderer: $e2');
-        }
-      }
-    } catch (e) {
-      print('An unexpected error occurred during map renderer initialization: $e');
-    }
-  }
+  // It's no longer necessary to initialize the Google Maps renderer manually.
+  // The plugin handles this automatically.
 
   await Firebase.initializeApp();
   await FirebaseAppCheck.instance.activate(
@@ -91,33 +71,29 @@ class MyApp extends StatelessWidget {
             primary: Color(0xFF6792FF),
             secondary: Color(0xFF6792FF),
             surface: Color(0xFF1E1E1E),
-            background: Color(0xFF121212),
             onPrimary: Colors.black,
             onSecondary: Colors.black,
-            onSurface: Colors.white70,
-            onBackground: Colors.white70)
+            onSurface: Colors.white70)
         : const ColorScheme.light(
             primary: Color(0xFF00008B),
             secondary: Color(0xFF00008B),
             surface: Colors.white,
-            background: Color(0xFFF3F4F8),
             onPrimary: Colors.white,
             onSecondary: Colors.white,
-            onSurface: Colors.black87,
-            onBackground: Colors.black87);
+            onSurface: Colors.black87);
 
     final textTheme = GoogleFonts.poppinsTextTheme(baseTheme.textTheme).apply(
-      bodyColor: colorScheme.onBackground,
-      displayColor: colorScheme.onBackground,
+      bodyColor: colorScheme.onSurface,
+      displayColor: colorScheme.onSurface,
     );
 
     return baseTheme.copyWith(
       colorScheme: colorScheme,
       textTheme: textTheme,
-      scaffoldBackgroundColor: colorScheme.background,
+      scaffoldBackgroundColor: colorScheme.surface,
       appBarTheme: AppBarTheme(
-        backgroundColor: colorScheme.background,
-        foregroundColor: colorScheme.onBackground,
+        backgroundColor: colorScheme.surface,
+        foregroundColor: colorScheme.onSurface,
         elevation: 0,
         centerTitle: true,
         titleTextStyle: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
@@ -126,7 +102,7 @@ class MyApp extends StatelessWidget {
         elevation: isDark ? 1 : 2,
         color: colorScheme.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        shadowColor: isDark ? Colors.black.withOpacity(0.5) : Colors.black.withOpacity(0.1),
+        shadowColor: isDark ? Colors.black.withAlpha(128) : Colors.black.withAlpha(26),
         margin: const EdgeInsets.symmetric(vertical: 8.0),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
@@ -137,15 +113,15 @@ class MyApp extends StatelessWidget {
         iconColor: colorScheme.primary,
       ),
        switchTheme: SwitchThemeData(
-        thumbColor: MaterialStateProperty.resolveWith<Color?>((states) {
-          if (states.contains(MaterialState.selected)) {
+        thumbColor: WidgetStateProperty.resolveWith<Color?>((states) {
+          if (states.contains(WidgetState.selected)) {
             return colorScheme.primary;
           }
           return isDark ? Colors.grey.shade400 : Colors.grey.shade300;
         }),
-        trackColor: MaterialStateProperty.resolveWith<Color?>((states) {
-          if (states.contains(MaterialState.selected)) {
-            return colorScheme.primary.withOpacity(0.5);
+        trackColor: WidgetStateProperty.resolveWith<Color?>((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primary.withAlpha(128);
           }
           return isDark ? Colors.grey.shade800 : Colors.grey.shade200;
         }),

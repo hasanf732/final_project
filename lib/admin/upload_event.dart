@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/Pages/location_picker_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:flutter/material.dart';
@@ -79,6 +78,7 @@ class _UploadEventState extends State<UploadEvent> {
   }
 
   Future<void> _pickLocation() async {
+    if (!mounted) return;
     final picked = await Navigator.of(context).push<LatLng>(
       MaterialPageRoute(
         builder: (context) => const LocationPickerPage(),
@@ -121,6 +121,7 @@ class _UploadEventState extends State<UploadEvent> {
         _selectedTime == null ||
         _pickedLocation == null ||
         _selectedCategory == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text("Please fill all fields and select an image, date, time, category, and location.")));
       return;
@@ -150,11 +151,13 @@ class _UploadEventState extends State<UploadEvent> {
         _selectedCategory!,
       );
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Event has been uploaded successfully")));
       _resetForm();
 
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Error uploading event: $e")));
     } finally {
@@ -389,7 +392,6 @@ class _UploadEventState extends State<UploadEvent> {
               border: Border.all(color: Colors.grey),
               borderRadius: BorderRadius.circular(10)),
           child: DropdownButtonFormField<String>(
-            value: selectedValue,
             hint: const Text("Select a category"),
             isExpanded: true,
             decoration: const InputDecoration(border: InputBorder.none),
@@ -400,6 +402,7 @@ class _UploadEventState extends State<UploadEvent> {
               );
             }).toList(),
             onChanged: onChanged,
+            value: selectedValue,
           ),
         ),
       ],
