@@ -113,15 +113,7 @@ class BookedEventsList extends StatelessWidget {
               itemBuilder: (context, index) {
                 final event = filteredDocs[index];
                 final data = event.data() as Map<String, dynamic>;
-                DateTime? eventDate;
-                final dateData = data['Date'];
-                String eventDateStr = '';
-                String eventTimeStr = '';
-                if (dateData is Timestamp) {
-                  eventDate = dateData.toDate();
-                  eventDateStr = DateFormat('yyyy-MM-dd').format(eventDate);
-                  eventTimeStr = DateFormat('h:mm a').format(eventDate);
-                }
+
                 return GestureDetector(
                   onTap: () {
                       Navigator.push(
@@ -131,10 +123,10 @@ class BookedEventsList extends StatelessWidget {
                             id: event.id,
                             image: data['Image'] ?? '',
                             name: data['Name'] ?? 'Untitled Event',
-                            date: eventDateStr,
+                            startDate: data['Date'] as Timestamp,
+                            endDate: data['endDate'] as Timestamp?,
                             location: data['Location'] ?? 'No location specified',
                             detail: data['Detail'] ?? 'No details available',
-                            time: eventTimeStr,
                           ),
                         ),
                       );
@@ -178,7 +170,7 @@ class BookedEventsList extends StatelessWidget {
                                   children: [
                                     Icon(Icons.calendar_today, size: 16.0, color: theme.textTheme.bodySmall?.color),
                                     const SizedBox(width: 5.0),
-                                    Text(eventDateStr, style: theme.textTheme.bodySmall),
+                                    Text(DateFormat('yyyy-MM-dd').format((data['Date'] as Timestamp).toDate()), style: theme.textTheme.bodySmall),
                                   ],
                                 ),
                                 const SizedBox(height: 3.0),

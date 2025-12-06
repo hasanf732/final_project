@@ -8,19 +8,22 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:in_app_review/in_app_review.dart';
+import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
 
 class DetailPage extends StatefulWidget {
-  final String image, name, date, location, detail, time, id;
+  final String image, name, location, detail, id;
+  final Timestamp? startDate, endDate;
+
   const DetailPage(
       {super.key,
       required this.image,
       required this.name,
-      required this.date,
       required this.location,
       required this.detail,
-      required this.time,
-      required this.id});
+      required this.id,
+      this.startDate,
+      this.endDate});
 
   @override
   State<DetailPage> createState() => _DetailPageState();
@@ -43,15 +46,15 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   String? _creatorId;
   bool _showReviews = false;
 
-
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   StreamSubscription? _userEventsSubscription;
+  Map<String, dynamic>? _eventData;
 
   @override
   void initState() {
     super.initState();
-    _getRatingAndReviews();
+    _getEventData();
     _listenToUserEvents();
     _checkIfFavorite();
     _checkAdminStatus();
@@ -79,6 +82,46 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     _userEventsSubscription?.cancel();
     super.dispose();
   }
+
+  Future<void> _getEventData() async {
+    if (mounted) setState(() => _isLoadingReviews = true);
+    DocumentSnapshot doc = await FirebaseFirestore.instance.collection("News").doc(widget.id).get();
+    if (doc.exists && doc.data() != null) {
+      Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+      _creatorId = data['creatorId'];
+      if (data.containsKey('ratings')) {
+        Map<String, dynamic> ratings = data['ratings'];
+        List<Map<String, dynamic>> reviewsList = [];
+        double total = 0;
+
+        ratings.forEach((key, value) {
+          if (value is Map && value.containsKey('rating')) {
+            total += value['rating'];
+            reviewsList.add({
+              'userName': value['userName'] ?? 'Anonymous',
+              'rating': value['rating'].toDouble(),
+              'review': value['review'] ?? ''
+            });
+          }
+        });
+
+        if (mounted) {
+          setState(() {
+            _totalRatings = ratings.isNotEmpty ? ratings.length : 0;
+            _averageRating = ratings.isNotEmpty ? total / ratings.length : 0.0;
+            _reviews = reviewsList;
+          });
+        }
+      }
+       if (mounted) {
+        setState(() {
+          _eventData = data;
+        });
+      }
+    }
+    if (mounted) setState(() => _isLoadingReviews = false);
+  }
+
 
   Future<void> _checkAdminStatus() async {
     bool isAdmin = await DatabaseMethods().isAdmin();
@@ -163,40 +206,6 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _getRatingAndReviews() async {
-    if (mounted) setState(() => _isLoadingReviews = true);
-    DocumentSnapshot doc = await FirebaseFirestore.instance.collection("News").doc(widget.id).get();
-    if (doc.exists && doc.data() != null) {
-      Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-      _creatorId = data['creatorId'];
-      if (data.containsKey('ratings')) {
-        Map<String, dynamic> ratings = data['ratings'];
-        List<Map<String, dynamic>> reviewsList = [];
-        double total = 0;
-
-        ratings.forEach((key, value) {
-          if (value is Map && value.containsKey('rating')) {
-            total += value['rating'];
-            reviewsList.add({
-              'userName': value['userName'] ?? 'Anonymous',
-              'rating': value['rating'].toDouble(),
-              'review': value['review'] ?? ''
-            });
-          }
-        });
-
-        if (mounted) {
-          setState(() {
-            _totalRatings = ratings.isNotEmpty ? ratings.length : 0;
-            _averageRating = ratings.isNotEmpty ? total / ratings.length : 0.0;
-            _reviews = reviewsList;
-          });
-        }
-      }
-    }
-    if (mounted) setState(() => _isLoadingReviews = false);
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -215,13 +224,9 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                   else if (_isRegistered)
                     _buildStatusBadge('Registered', theme.colorScheme.primary),
                   const SizedBox(height: 20.0),
-
-                  _buildInfoRow(theme, Icons.calendar_today_outlined, widget.date),
-                  const SizedBox(height: 10.0),
-                  _buildInfoRow(theme, Icons.access_time_outlined, widget.time),
-                  const SizedBox(height: 10.0),
-                  _buildInfoRow(theme, Icons.location_on_outlined, widget.location),
-
+                  _buildEventInfoCard(theme),
+                  const SizedBox(height: 20.0),
+                   if (_eventData != null) _buildRegistrationCard(theme),
                   const SizedBox(height: 30.0),
                   Text("About Event", style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10.0),
@@ -229,7 +234,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                   const SizedBox(height: 30.0),
                   _buildReviewsSection(theme),
                   const SizedBox(height: 30.0),
-                  _buildRegisterButton(theme),
+                  if (_eventData != null) _buildRegisterButton(theme),
                   const SizedBox(height: 20.0),
                 ],
               ),
@@ -238,6 +243,68 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
         ],
       ),
     );
+  }
+
+  Widget _buildEventInfoCard(ThemeData theme) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.0)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+             Text("Date & Time", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+             const Divider(height: 20),
+            _buildInfoRow(theme, Icons.calendar_today_outlined, "Start Date", _formatDate(widget.startDate)),
+            _buildInfoRow(theme, Icons.access_time_outlined, "Start Time", _formatTime(widget.startDate)),
+            if (widget.endDate != null) ...[
+              const SizedBox(height: 10),
+              _buildInfoRow(theme, Icons.calendar_today, "End Date", _formatDate(widget.endDate!)),
+              _buildInfoRow(theme, Icons.access_time, "End Time", _formatTime(widget.endDate!)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+   Widget _buildRegistrationCard(ThemeData theme) {
+    final registrationStartDate = _eventData!['registrationStartDate'] as Timestamp?;
+    final registrationEndDate = _eventData!['registrationEndDate'] as Timestamp?;
+    final participantLimit = _eventData!['participantLimit'] as int?;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.0)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Registration", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+            const Divider(height: 20),
+            if (registrationStartDate != null)
+              _buildInfoRow(theme, Icons.calendar_today, "From", _formatDate(registrationStartDate)),
+            if (registrationEndDate != null)
+              _buildInfoRow(theme, Icons.calendar_today, "To", _formatDate(registrationEndDate)),
+            if (participantLimit != null)
+              _buildInfoRow(theme, Icons.people_alt_outlined, "Limit", participantLimit == -1 ? "Unlimited" : participantLimit.toString()),
+          ],
+        ),
+      ),
+    );
+  }
+
+
+  String _formatDate(Timestamp? timestamp) {
+    if (timestamp == null) return "Date N/A";
+    return DateFormat('MMM dd, yyyy').format(timestamp.toDate());
+  }
+
+  String _formatTime(Timestamp? timestamp) {
+    if (timestamp == null) return "Time N/A";
+    return DateFormat('h:mm a').format(timestamp.toDate());
   }
 
   Widget _buildSliverAppBar(ThemeData theme) {
@@ -358,13 +425,26 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildInfoRow(ThemeData theme, IconData icon, String text) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: theme.colorScheme.primary),
-        const SizedBox(width: 12),
-        Expanded(child: Text(text, style: theme.textTheme.titleMedium)),
-      ],
+  Widget _buildInfoRow(ThemeData theme, IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: theme.colorScheme.primary, size: 20),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: theme.textTheme.labelLarge?.copyWith(color: Colors.grey[600])),
+                const SizedBox(height: 2),
+                Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -501,7 +581,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                   backgroundColor: Colors.green,
                   content: Text("Thank you for your feedback!")));
 
-              await _getRatingAndReviews();
+              await _getEventData();
 
               setState(() {
                 _userRating = 0.0;
@@ -591,58 +671,103 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   }
 
   Widget _buildRegisterButton(ThemeData theme) {
-    if (_isAttended) {
-      return ElevatedButton(
-        onPressed: null, // Attended events have no action
-        style: ElevatedButton.styleFrom(
-          minimumSize: const Size(double.infinity, 50),
-          backgroundColor: Colors.grey.shade600,
-        ),
-        child: const Text("Attended"),
-      );
-    }
-    
-    if (_isRegistered) {
-      return ElevatedButton(
-        onPressed: () {
-          final user = FirebaseAuth.instance.currentUser;
-          if (user != null) {
-            String qrData = "${user.uid}_${widget.id}";
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => QrDisplayPage(
-                  qrData: qrData,
-                  eventName: widget.name,
-                  eventDate: widget.date,
-                  eventLocation: widget.location,
-                ),
-              ),
-            );
-          }
-        },
-        style: ElevatedButton.styleFrom(
-          minimumSize: const Size(double.infinity, 50),
-          backgroundColor: theme.colorScheme.secondary, // A different color to show it's a different state
-          foregroundColor: theme.colorScheme.onSecondary,
-        ),
-        child: const Text("Show QR Code"),
-      );
-    }
+    return StreamBuilder<int>(
+      stream: DatabaseMethods().getEventRegistrationCount(widget.id),
+      builder: (context, snapshot) {
+        final registrationCount = snapshot.data ?? 0;
+        bool isFull = false;
+        if (_eventData != null && _eventData!['participantLimit'] != null && _eventData!['participantLimit'] != -1) {
+          isFull = registrationCount >= _eventData!['participantLimit'];
+        }
 
-    return ElevatedButton(
-      onPressed: () async {
-        await DatabaseMethods().registerForEvent(widget.id);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            backgroundColor: Colors.green,
-            content: Text("Successfully registered for the event!")));
+        bool registrationHasOpened = true;
+        if (_eventData != null && _eventData!['registrationStartDate'] != null) {
+          registrationHasOpened = DateTime.now().isAfter((_eventData!['registrationStartDate'] as Timestamp).toDate());
+        }
+        
+        bool registrationHasClosed = false;
+        if (_eventData != null && _eventData!['registrationEndDate'] != null) {
+          registrationHasClosed = DateTime.now().isAfter((_eventData!['registrationEndDate'] as Timestamp).toDate());
+        }
+
+        if (_isAttended) {
+          return ElevatedButton(
+            onPressed: null,
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+              backgroundColor: Colors.grey.shade600,
+            ),
+            child: const Text("Attended"),
+          );
+        }
+        
+        if (_isRegistered) {
+          return ElevatedButton(
+            onPressed: () {
+              final user = FirebaseAuth.instance.currentUser;
+              if (user != null) {
+                String qrData = "${user.uid}_${widget.id}";
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => QrDisplayPage(
+                      qrData: qrData,
+                      eventName: widget.name,
+                      eventDate: _formatDate(widget.startDate),
+                      eventLocation: widget.location,
+                    ),
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+              backgroundColor: theme.colorScheme.secondary,
+              foregroundColor: theme.colorScheme.onSecondary,
+            ),
+            child: const Text("Show QR Code"),
+          );
+        }
+
+        if (isFull) {
+          return const ElevatedButton(
+            onPressed: null,
+            style: ButtonStyle(minimumSize: MaterialStatePropertyAll(Size(double.infinity, 50))),
+            child: Text("Registration Full"),
+          );
+        }
+
+        if (!registrationHasOpened) {
+          return const ElevatedButton(
+            onPressed: null,
+            style: ButtonStyle(minimumSize: MaterialStatePropertyAll(Size(double.infinity, 50))),
+            child: Text("Registration Has Not Opened"),
+          );
+        }
+
+        if (registrationHasClosed) {
+          return const ElevatedButton(
+            onPressed: null,
+            style: ButtonStyle(minimumSize: MaterialStatePropertyAll(Size(double.infinity, 50))),
+            child: Text("Registration Closed"),
+          );
+        }
+
+        return ElevatedButton(
+          onPressed: () async {
+            await DatabaseMethods().registerForEvent(widget.id);
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                backgroundColor: Colors.green,
+                content: Text("Successfully registered for the event!")));
+          },
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 50),
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+          ),
+          child: const Text("Register Now"),
+        );
       },
-      style: ElevatedButton.styleFrom(
-        minimumSize: const Size(double.infinity, 50),
-        backgroundColor: theme.colorScheme.primary,
-        foregroundColor: theme.colorScheme.onPrimary,
-      ),
-      child: const Text("Register Now"),
     );
   }
 

@@ -645,16 +645,18 @@ class _MapPageState extends State<MapPage> {
     final eventDoc = place.document;
     if (eventDoc != null) {
       final data = eventDoc.data() as Map<String, dynamic>;
+      final startDate = data['Date'] as Timestamp?;
+      if (startDate == null) return;
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => DetailPage(
             image: data['Image'] ?? '',
             name: data['Name'] ?? 'No Name',
-            date: data['Date'] != null ? DateFormat('yyyy-MM-dd').format((data['Date'] as Timestamp).toDate()) : '',
+            startDate: startDate,
+            endDate: data['endDate'] as Timestamp?,
             location: data['Location'] ?? 'No Location',
             detail: data['Detail'] ?? 'No Details',
-            time: data['Time'] ?? 'No Time',
             id: eventDoc.id,
           ),
         ),

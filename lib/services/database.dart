@@ -32,7 +32,7 @@ class DatabaseMethods {
   }
 
   Future<void> addNews(
-      Uint8List imageBytes, String name, String detail, String location, double latitude, double longitude, DateTime dateTime, String category) async {
+    Uint8List imageBytes, String name, String detail, String location, double latitude, double longitude, DateTime dateTime, String category, {DateTime? endDate, DateTime? registrationStartDate, DateTime? registrationEndDate, int? participantLimit}) async {
     final user = _auth.currentUser;
     if (user == null) return; // Or handle appropriately
 
@@ -49,6 +49,10 @@ class DatabaseMethods {
       'latitude': latitude,
       'longitude': longitude,
       'Date': Timestamp.fromDate(dateTime),
+      'endDate': endDate != null ? Timestamp.fromDate(endDate) : null,
+      'registrationStartDate': registrationStartDate != null ? Timestamp.fromDate(registrationStartDate) : null,
+      'registrationEndDate': registrationEndDate != null ? Timestamp.fromDate(registrationEndDate) : null,
+      'participantLimit': participantLimit,
       'Image': imageUrl,
       'createdAt': FieldValue.serverTimestamp(),
       'Category': category,
@@ -64,6 +68,10 @@ class DatabaseMethods {
 
   Stream<QuerySnapshot> getAdminEventDetails() {
     return _firestore.collection("News").snapshots();
+  }
+
+  Stream<int> getEventRegistrationCount(String eventId) {
+    return _firestore.collection('users').where('bookedEvents', arrayContains: eventId).snapshots().map((snapshot) => snapshot.size);
   }
 
   Stream<Map<String, int>> getEventRegistrationCounts() {

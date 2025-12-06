@@ -5,6 +5,7 @@ import 'package:final_project/Pages/location_picker_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -72,25 +73,49 @@ class _CreateEventTabState extends State<CreateEventTab> {
   final _nameController = TextEditingController();
   final _detailController = TextEditingController();
   final _locationNameController = TextEditingController();
-  final _dateController = TextEditingController();
-  final _timeController = TextEditingController();
+  final _startDateController = TextEditingController();
+  final _startTimeController = TextEditingController();
+  final _endDateController = TextEditingController();
+  final _endTimeController = TextEditingController();
+  final _registrationStartDateController = TextEditingController();
+  final _registrationEndDateController = TextEditingController();
+  final _participantLimitController = TextEditingController();
 
   Uint8List? _selectedImageBytes;
-  DateTime? _selectedDate;
-  TimeOfDay? _selectedTime;
+  DateTime? _selectedStartDate;
+  TimeOfDay? _selectedStartTime;
+  DateTime? _selectedEndDate;
+  TimeOfDay? _selectedEndTime;
+  DateTime? _selectedRegistrationStartDate;
+  DateTime? _selectedRegistrationEndDate;
+  bool _unlimitedParticipants = false;
   LatLng? _pickedLocation;
   String? _selectedCategory;
   bool _isLoading = false;
 
-  final List<String> _categories = ['Music', 'Media', 'Sport', 'Astro', 'Art', 'Film', 'Volunteer', 'Cyber'];
+  final List<String> _categories = [
+    'Music',
+    'Media',
+    'Sport',
+    'Astro',
+    'Art',
+    'Film',
+    'Volunteer',
+    'Cyber'
+  ];
 
   @override
   void dispose() {
     _nameController.dispose();
     _detailController.dispose();
     _locationNameController.dispose();
-    _dateController.dispose();
-    _timeController.dispose();
+    _startDateController.dispose();
+    _startTimeController.dispose();
+    _endDateController.dispose();
+    _endTimeController.dispose();
+    _registrationStartDateController.dispose();
+    _registrationEndDateController.dispose();
+    _participantLimitController.dispose();
     super.dispose();
   }
 
@@ -126,30 +151,88 @@ class _CreateEventTabState extends State<CreateEventTab> {
     }
   }
 
-  Future<void> _pickDate() async {
+  Future<void> _pickStartDate() async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
+      initialDate: _selectedStartDate ?? DateTime.now(),
       firstDate: DateTime.now(),
       lastDate: DateTime(2101),
     );
-    if (picked != null && picked != _selectedDate) {
+    if (picked != null && picked != _selectedStartDate) {
       setState(() {
-        _selectedDate = picked;
-        _dateController.text = DateFormat('yyyy-MM-dd').format(picked);
+        _selectedStartDate = picked;
+        _startDateController.text = DateFormat('yyyy-MM-dd').format(picked);
       });
     }
   }
 
-  Future<void> _pickTime() async {
+  Future<void> _pickStartTime() async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
-      initialTime: _selectedTime ?? TimeOfDay.now(),
+      initialTime: _selectedStartTime ?? TimeOfDay.now(),
     );
-    if (picked != null && picked != _selectedTime) {
+    if (picked != null && picked != _selectedStartTime) {
       setState(() {
-        _selectedTime = picked;
-        _timeController.text = picked.format(context);
+        _selectedStartTime = picked;
+        _startTimeController.text = picked.format(context);
+      });
+    }
+  }
+
+  Future<void> _pickEndDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedEndDate ?? _selectedStartDate ?? DateTime.now(),
+      firstDate: _selectedStartDate ?? DateTime.now(),
+      lastDate: DateTime(2101),
+    );
+    if (picked != null && picked != _selectedEndDate) {
+      setState(() {
+        _selectedEndDate = picked;
+        _endDateController.text = DateFormat('yyyy-MM-dd').format(picked);
+      });
+    }
+  }
+
+  Future<void> _pickEndTime() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedEndTime ?? _selectedStartTime ?? TimeOfDay.now(),
+    );
+    if (picked != null && picked != _selectedEndTime) {
+      setState(() {
+        _selectedEndTime = picked;
+        _endTimeController.text = picked.format(context);
+      });
+    }
+  }
+
+  Future<void> _pickRegistrationStartDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedRegistrationStartDate ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: _selectedStartDate ?? DateTime(2101),
+    );
+    if (picked != null && picked != _selectedRegistrationStartDate) {
+      setState(() {
+        _selectedRegistrationStartDate = picked;
+        _registrationStartDateController.text = DateFormat('yyyy-MM-dd').format(picked);
+      });
+    }
+  }
+
+  Future<void> _pickRegistrationEndDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedRegistrationEndDate ?? _selectedRegistrationStartDate ?? DateTime.now(),
+      firstDate: _selectedRegistrationStartDate ?? DateTime.now(),
+      lastDate: _selectedStartDate ?? DateTime(2101),
+    );
+    if (picked != null && picked != _selectedRegistrationEndDate) {
+      setState(() {
+        _selectedRegistrationEndDate = picked;
+        _registrationEndDateController.text = DateFormat('yyyy-MM-dd').format(picked);
       });
     }
   }
@@ -159,8 +242,8 @@ class _CreateEventTabState extends State<CreateEventTab> {
 
     if (_selectedImageBytes == null ||
         _pickedLocation == null ||
-        _selectedDate == null ||
-        _selectedTime == null ||
+        _selectedStartDate == null ||
+        _selectedStartTime == null ||
         _selectedCategory == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please complete all fields for the event.')),
@@ -173,13 +256,26 @@ class _CreateEventTabState extends State<CreateEventTab> {
     });
 
     try {
-      final combinedDateTime = DateTime(
-        _selectedDate!.year,
-        _selectedDate!.month,
-        _selectedDate!.day,
-        _selectedTime!.hour,
-        _selectedTime!.minute,
+      final startDateTime = DateTime(
+        _selectedStartDate!.year,
+        _selectedStartDate!.month,
+        _selectedStartDate!.day,
+        _selectedStartTime!.hour,
+        _selectedStartTime!.minute,
       );
+
+      final endDateTime = _selectedEndDate != null && _selectedEndTime != null
+          ? DateTime(
+              _selectedEndDate!.year,
+              _selectedEndDate!.month,
+              _selectedEndDate!.day,
+              _selectedEndTime!.hour,
+              _selectedEndTime!.minute,
+            )
+          : null;
+      final registrationStartDateTime = _selectedRegistrationStartDate;
+      final registrationEndDateTime = _selectedRegistrationEndDate;
+      final participantLimit = _unlimitedParticipants ? -1 : int.tryParse(_participantLimitController.text);
 
       await DatabaseMethods().addNews(
         _selectedImageBytes!,
@@ -188,25 +284,35 @@ class _CreateEventTabState extends State<CreateEventTab> {
         _locationNameController.text.trim(),
         _pickedLocation!.latitude,
         _pickedLocation!.longitude,
-        combinedDateTime,
+        startDateTime,
         _selectedCategory!,
+        endDate: endDateTime,
+        registrationStartDate: registrationStartDateTime,
+        registrationEndDate: registrationEndDateTime,
+        participantLimit: participantLimit,
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(backgroundColor: Colors.green, content: Text('Event created successfully!')),
+        const SnackBar(
+            backgroundColor: Colors.green, content: Text('Event created successfully!')),
       );
       _formKey.currentState?.reset();
       setState(() {
         _selectedImageBytes = null;
         _pickedLocation = null;
         _selectedCategory = null;
-        _dateController.clear();
-        _timeController.clear();
+        _startDateController.clear();
+        _startTimeController.clear();
+        _endDateController.clear();
+        _endTimeController.clear();
         _nameController.clear();
         _detailController.clear();
         _locationNameController.clear();
+        _registrationStartDateController.clear();
+        _registrationEndDateController.clear();
+        _participantLimitController.clear();
+        _unlimitedParticipants = false;
       });
-
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(backgroundColor: Colors.red, content: Text('Failed to create event: $e')),
@@ -244,9 +350,71 @@ class _CreateEventTabState extends State<CreateEventTab> {
             const SizedBox(height: 16),
             Row(
               children: [
-                Expanded(child: _buildTextFormField(_dateController, 'Date', readOnly: true, onTap: _pickDate)),
+                Expanded(
+                    child: _buildTextFormField(_startDateController, 'Start Date',
+                        readOnly: true, onTap: _pickStartDate)),
                 const SizedBox(width: 16),
-                Expanded(child: _buildTextFormField(_timeController, 'Time', readOnly: true, onTap: _pickTime)),
+                Expanded(
+                    child: _buildTextFormField(_startTimeController, 'Start Time',
+                        readOnly: true, onTap: _pickStartTime)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                    child: _buildTextFormField(_endDateController, 'End Date',
+                        readOnly: true, onTap: _pickEndDate)),
+                const SizedBox(width: 16),
+                Expanded(
+                    child: _buildTextFormField(_endTimeController, 'End Time',
+                        readOnly: true, onTap: _pickEndTime)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 16),
+            Text('Registration Settings', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                    child: _buildTextFormField(
+                        _registrationStartDateController, 'Registration Start',
+                        readOnly: true, onTap: _pickRegistrationStartDate)),
+                const SizedBox(width: 16),
+                Expanded(
+                    child: _buildTextFormField(
+                        _registrationEndDateController, 'Registration End',
+                        readOnly: true, onTap: _pickRegistrationEndDate)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildTextFormField(
+                    _participantLimitController,
+                    'Participant Limit',
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    enabled: !_unlimitedParticipants,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Column(
+                  children: [
+                    const Text('Unlimited'),
+                    Switch(
+                      value: _unlimitedParticipants,
+                      onChanged: (value) {
+                        setState(() {
+                          _unlimitedParticipants = value;
+                        });
+                      },
+                    ),
+                  ],
+                )
               ],
             ),
             const SizedBox(height: 30),
@@ -286,7 +454,8 @@ class _CreateEventTabState extends State<CreateEventTab> {
             : Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.add_a_photo_outlined, size: 40, color: theme.colorScheme.primary),
+                  Icon(Icons.add_a_photo_outlined,
+                      size: 40, color: theme.colorScheme.primary),
                   const SizedBox(height: 8),
                   const Text('Tap to select an image'),
                 ],
@@ -310,14 +479,21 @@ class _CreateEventTabState extends State<CreateEventTab> {
             Icon(Icons.map_outlined, color: theme.colorScheme.primary),
             const SizedBox(width: 12),
             Text(
-              _pickedLocation == null ? 'Pick Location on Map' : 'Location Selected!',
+              _pickedLocation == null
+                  ? 'Pick Location on Map'
+                  : 'Location Selected!',
               style: theme.textTheme.titleMedium?.copyWith(
-                color: _pickedLocation != null ? Colors.green : theme.colorScheme.onSurface,
-                fontWeight: _pickedLocation != null ? FontWeight.bold : FontWeight.normal,
+                color: _pickedLocation != null
+                    ? Colors.green
+                    : theme.colorScheme.onSurface,
+                fontWeight: _pickedLocation != null
+                    ? FontWeight.bold
+                    : FontWeight.normal,
               ),
             ),
             const Spacer(),
-            if (_pickedLocation != null) const Icon(Icons.check_circle, color: Colors.green),
+            if (_pickedLocation != null)
+              const Icon(Icons.check_circle, color: Colors.green),
           ],
         ),
       ),
@@ -325,12 +501,15 @@ class _CreateEventTabState extends State<CreateEventTab> {
   }
 
   Widget _buildTextFormField(TextEditingController controller, String label,
-      {int maxLines = 1, bool readOnly = false, VoidCallback? onTap}) {
+      {int maxLines = 1, bool readOnly = false, VoidCallback? onTap, TextInputType? keyboardType, List<TextInputFormatter>? inputFormatters, bool? enabled}) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
       readOnly: readOnly,
       onTap: onTap,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      enabled: enabled,
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
@@ -374,7 +553,8 @@ class EventStatisticsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      return const Center(child: Text("You must be logged in to view statistics."));
+      return const Center(
+          child: Text("You must be logged in to view statistics."));
     }
 
     return StreamBuilder<Map<String, int>>(
@@ -384,7 +564,8 @@ class EventStatisticsTab extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
         if (regCountSnapshot.hasError) {
-          return Center(child: Text("Error fetching stats: ${regCountSnapshot.error}"));
+          return Center(
+              child: Text("Error fetching stats: ${regCountSnapshot.error}"));
         }
 
         final registrationCounts = regCountSnapshot.data ?? {};
@@ -396,7 +577,8 @@ class EventStatisticsTab extends StatelessWidget {
               return const Center(child: CircularProgressIndicator());
             }
             if (attendanceSnapshot.hasError) {
-              return Center(child: Text("Error fetching stats: ${attendanceSnapshot.error}"));
+              return Center(
+                  child: Text("Error fetching stats: ${attendanceSnapshot.error}"));
             }
 
             final attendanceCounts = attendanceSnapshot.data ?? {};
@@ -410,8 +592,10 @@ class EventStatisticsTab extends StatelessWidget {
                 if (eventSnapshot.hasError) {
                   return Center(child: Text("Error: ${eventSnapshot.error}"));
                 }
-                if (!eventSnapshot.hasData || eventSnapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text("You have not created any events yet."));
+                if (!eventSnapshot.hasData ||
+                    eventSnapshot.data!.docs.isEmpty) {
+                  return const Center(
+                      child: Text("You have not created any events yet."));
                 }
 
                 final filteredDocs = eventSnapshot.data!.docs.where((doc) {
@@ -420,7 +604,8 @@ class EventStatisticsTab extends StatelessWidget {
                 }).toList();
 
                 if (filteredDocs.isEmpty) {
-                  return const Center(child: Text("You have not created any events yet."));
+                  return const Center(
+                      child: Text("You have not created any events yet."));
                 }
 
                 return ListView.builder(
@@ -430,25 +615,34 @@ class EventStatisticsTab extends StatelessWidget {
                     var eventDoc = filteredDocs[index];
                     var eventData = eventDoc.data() as Map<String, dynamic>;
                     var eventName = eventData['Name'] ?? 'Unnamed Event';
-                    var ratings = eventData['ratings'] as Map<String, dynamic>? ?? {};
+                    var ratings =
+                        eventData['ratings'] as Map<String, dynamic>? ?? {};
                     double averageRating = 0;
                     if (ratings.isNotEmpty) {
-                      averageRating = ratings.values.map((r) => r['rating'] as num).fold(0.0, (prev, element) => prev + element) /
+                      averageRating = ratings.values
+                              .map((r) => r['rating'] as num)
+                              .fold(0.0, (prev, element) => prev + element) /
                           ratings.length;
                     }
 
-                    final registrationCount = registrationCounts[eventDoc.id] ?? 0;
+                    final registrationCount =
+                        registrationCounts[eventDoc.id] ?? 0;
                     final attendanceCount = attendanceCounts[eventDoc.id] ?? 0;
 
                     return Card(
                       elevation: 2.0,
-                      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      margin:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       child: Padding(
                         padding: const EdgeInsets.all(12.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(eventName, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                            Text(eventName,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.bold)),
                             const SizedBox(height: 8),
                             const Divider(),
                             const SizedBox(height: 8),
@@ -457,22 +651,35 @@ class EventStatisticsTab extends StatelessWidget {
                               runSpacing: 4.0,
                               alignment: WrapAlignment.spaceAround,
                               children: [
-                                Row(mainAxisSize: MainAxisSize.min, children: [
-                                  const Icon(Icons.people_alt_outlined, size: 16),
-                                  const SizedBox(width: 8),
-                                  Text('$registrationCount Registered', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                ]),
-                                Row(mainAxisSize: MainAxisSize.min, children: [
-                                  const Icon(Icons.check_circle_outline, size: 16),
-                                  const SizedBox(width: 8),
-                                  Text('$attendanceCount Attended', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                ]),
+                                Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.people_alt_outlined,
+                                          size: 16),
+                                      const SizedBox(width: 8),
+                                      Text('$registrationCount Registered',
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold)),
+                                    ]),
+                                Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.check_circle_outline,
+                                          size: 16),
+                                      const SizedBox(width: 8),
+                                      Text('$attendanceCount Attended',
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold)),
+                                    ]),
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     const Icon(Icons.star_border, size: 16),
                                     const SizedBox(width: 8),
-                                    Text('${averageRating.toStringAsFixed(1)} (${ratings.length} Reviews)', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    Text(
+                                        '${averageRating.toStringAsFixed(1)} (${ratings.length} Reviews)',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold)),
                                   ],
                                 ),
                               ],
@@ -526,33 +733,41 @@ class _ScanQrPageState extends State<ScanQrPage> {
       final userId = parts[0];
       final eventId = parts[1];
 
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
-      final eventDoc = await FirebaseFirestore.instance.collection('News').doc(eventId).get();
+      final userDoc =
+          await FirebaseFirestore.instance.collection('users').doc(userId).get();
+      final eventDoc =
+          await FirebaseFirestore.instance.collection('News').doc(eventId).get();
 
       if (!userDoc.exists || !eventDoc.exists) {
-        _showScanResultDialog(ScanStatus.notFound, userData: userDoc.data(), eventData: eventDoc.data());
+        _showScanResultDialog(ScanStatus.notFound,
+            userData: userDoc.data(), eventData: eventDoc.data());
         return;
       }
 
       final userData = userDoc.data()!;
       final eventData = eventDoc.data()!;
       final bookedEvents = List<String>.from(userData['bookedEvents'] ?? []);
-      final attendedEvents = List<String>.from(userData['attendedEvents'] ?? []);
+      final attendedEvents =
+          List<String>.from(userData['attendedEvents'] ?? []);
 
       if (attendedEvents.contains(eventId)) {
-        _showScanResultDialog(ScanStatus.alreadyScanned, userData: userData, eventData: eventData);
+        _showScanResultDialog(ScanStatus.alreadyScanned,
+            userData: userData, eventData: eventData);
       } else if (bookedEvents.contains(eventId)) {
         await DatabaseMethods().markUserAsAttended(userId, eventId);
-        _showScanResultDialog(ScanStatus.valid, userData: userData, eventData: eventData);
+        _showScanResultDialog(ScanStatus.valid,
+            userData: userData, eventData: eventData);
       } else {
-        _showScanResultDialog(ScanStatus.invalidTicket, userData: userData, eventData: eventData);
+        _showScanResultDialog(ScanStatus.invalidTicket,
+            userData: userData, eventData: eventData);
       }
     } catch (e) {
       _showScanResultDialog(ScanStatus.error);
     }
   }
 
-  void _showScanResultDialog(ScanStatus status, {Map<String, dynamic>? userData, Map<String, dynamic>? eventData}) {
+  void _showScanResultDialog(ScanStatus status,
+      {Map<String, dynamic>? userData, Map<String, dynamic>? eventData}) {
     showModalBottomSheet(
       context: context,
       isDismissible: false,
@@ -574,11 +789,11 @@ class _ScanQrPageState extends State<ScanQrPage> {
         );
       },
     ).whenComplete(() {
-        if(mounted){
-             setState(() {
-                _isProcessing = false;
-            });
-        }
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
     });
   }
 
@@ -606,7 +821,7 @@ class _ScanQrPageState extends State<ScanQrPage> {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-         // Instruction Text
+        // Instruction Text
         Positioned(
           top: MediaQuery.of(context).size.height * 0.15,
           child: Container(
@@ -622,7 +837,9 @@ class _ScanQrPageState extends State<ScanQrPage> {
           ),
         ),
 
-        if (_isProcessing && !ModalRoute.of(context)!.isCurrent) // Only show spinner if no dialog is up
+        if (_isProcessing &&
+            !ModalRoute.of(context)!
+                .isCurrent) // Only show spinner if no dialog is up
           Container(
             width: 250,
             height: 250,
@@ -630,14 +847,22 @@ class _ScanQrPageState extends State<ScanQrPage> {
               color: Colors.black.withOpacity(0.5),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Center(child: CircularProgressIndicator(color: Colors.white)),
+            child:
+                const Center(child: CircularProgressIndicator(color: Colors.white)),
           ),
       ],
     );
   }
 }
 
-enum ScanStatus { valid, invalidTicket, invalidQr, notFound, alreadyScanned, error }
+enum ScanStatus {
+  valid,
+  invalidTicket,
+  invalidQr,
+  notFound,
+  alreadyScanned,
+  error
+}
 
 class _TicketDetailsCard extends StatelessWidget {
   final Map<String, dynamic>? userData;
@@ -664,7 +889,7 @@ class _TicketDetailsCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-           Padding(
+          Padding(
             padding: const EdgeInsets.all(12.0),
             child: Center(
               child: Container(
@@ -689,48 +914,68 @@ class _TicketDetailsCard extends StatelessWidget {
                     children: [
                       Icon(icon, color: color, size: 32),
                       const SizedBox(width: 12),
-                      Text(title, style: theme.textTheme.headlineSmall?.copyWith(color: color, fontWeight: FontWeight.bold)),
+                      Text(title,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                              color: color, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text(message, textAlign: TextAlign.center, style: theme.textTheme.titleMedium),
+                  Text(message,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.titleMedium),
                   const SizedBox(height: 16),
                   const Divider(),
-          
+
                   if (eventData != null) ...[
                     const SizedBox(height: 16),
-                    Text("Event Details", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                    Text("Event Details",
+                        style: theme.textTheme.titleLarge
+                            ?.copyWith(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 12),
-                    _buildInfoRow(theme, Icons.event, 'Event', eventData!['Name'] ?? 'N/A'),
                     _buildInfoRow(
-                        theme, Icons.calendar_today, 'Date', _formatTimestamp(eventData!['Date'], 'EEE, MMM d, yyyy')),
-                    _buildInfoRow(theme, Icons.access_time, 'Time', _formatTimestamp(eventData!['Date'], 'h:mm a')),
-                    _buildInfoRow(theme, Icons.location_on, 'Location', eventData!['Location'] ?? 'N/A'),
+                        theme, Icons.event, 'Event', eventData!['Name'] ?? 'N/A'),
+                    _buildInfoRow(
+                        theme,
+                        Icons.calendar_today,
+                        'Date',
+                        _formatTimestamp(
+                            eventData!['Date'], 'EEE, MMM d, yyyy')),
+                    _buildInfoRow(theme, Icons.access_time, 'Time',
+                        _formatTimestamp(eventData!['Date'], 'h:mm a')),
+                    _buildInfoRow(theme, Icons.location_on, 'Location',
+                        eventData!['Location'] ?? 'N/A'),
                     const SizedBox(height: 16),
                     const Divider(),
                   ],
-          
+
                   if (userData != null) ...[
                     const SizedBox(height: 16),
-                    Text("User Information", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                    Text("User Information",
+                        style: theme.textTheme.titleLarge
+                            ?.copyWith(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 12),
-                    _buildInfoRow(theme, Icons.person, 'Name', userData!['Name'] ?? 'N/A'),
-                    _buildInfoRow(theme, Icons.email, 'Email', (userData!['Email'] ?? userData!['email']) ?? 'N/A'),
+                    _buildInfoRow(
+                        theme, Icons.person, 'Name', userData!['Name'] ?? 'N/A'),
+                    _buildInfoRow(
+                        theme,
+                        Icons.email,
+                        'Email',
+                        (userData!['Email'] ?? userData!['email']) ?? 'N/A'),
                   ],
                   const SizedBox(height: 20),
-                   SizedBox(
+                  SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: () => Navigator.of(context).pop(),
-                       style: ElevatedButton.styleFrom(
+                      style: ElevatedButton.styleFrom(
                         backgroundColor: color,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                       ),
+                      ),
                       child: const Text('Scan Next Ticket'),
                     ),
                   ),
-                   const SizedBox(height: 20),
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
@@ -740,7 +985,8 @@ class _TicketDetailsCard extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoRow(ThemeData theme, IconData icon, String label, String value) {
+  Widget _buildInfoRow(
+      ThemeData theme, IconData icon, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -752,9 +998,13 @@ class _TicketDetailsCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: theme.textTheme.labelLarge?.copyWith(color: Colors.grey[600])),
+                Text(label,
+                    style: theme.textTheme.labelLarge
+                        ?.copyWith(color: Colors.grey[600])),
                 const SizedBox(height: 2),
-                Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                Text(value,
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -766,17 +1016,47 @@ class _TicketDetailsCard extends StatelessWidget {
   (IconData, Color, String, String) _getStatusInfo(ScanStatus status) {
     switch (status) {
       case ScanStatus.valid:
-        return (Icons.check_circle, Colors.green, "Access Granted", "User is validated for this event.");
+        return (
+          Icons.check_circle,
+          Colors.green,
+          "Access Granted",
+          "User is validated for this event."
+        );
       case ScanStatus.invalidTicket:
-        return (Icons.cancel, Colors.red, "Invalid Ticket", "This user has not booked this event.");
+        return (
+          Icons.cancel,
+          Colors.red,
+          "Invalid Ticket",
+          "This user has not booked this event."
+        );
       case ScanStatus.alreadyScanned:
-        return (Icons.history, Colors.orange, "Already Scanned", "This ticket has already been used.");
+        return (
+          Icons.history,
+          Colors.orange,
+          "Already Scanned",
+          "This ticket has already been used."
+        );
       case ScanStatus.notFound:
-        return (Icons.error, Colors.red, "Not Found", "The user or event associated with this QR code could not be found.");
+        return (
+          Icons.error,
+          Colors.red,
+          "Not Found",
+          "The user or event associated with this QR code could not be found."
+        );
       case ScanStatus.invalidQr:
-        return (Icons.qr_code_scanner, Colors.red, "Invalid QR Code", "The scanned QR code is not in the correct format.");
+        return (
+          Icons.qr_code_scanner,
+          Colors.red,
+          "Invalid QR Code",
+          "The scanned QR code is not in the correct format."
+        );
       case ScanStatus.error:
-        return (Icons.report_problem, Colors.red, "System Error", "An unexpected error occurred during verification.");
+        return (
+          Icons.report_problem,
+          Colors.red,
+          "System Error",
+          "An unexpected error occurred during verification."
+        );
     }
   }
 

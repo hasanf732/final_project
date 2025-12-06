@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 
 class EditEventPage extends StatefulWidget {
   final String eventId;
@@ -16,8 +18,17 @@ class _EditEventPageState extends State<EditEventPage> {
   final _nameController = TextEditingController();
   final _detailController = TextEditingController();
   final _locationController = TextEditingController();
-  DateTime? _selectedDate;
-  TimeOfDay? _selectedTime;
+  final _registrationStartDateController = TextEditingController();
+  final _registrationEndDateController = TextEditingController();
+  final _participantLimitController = TextEditingController();
+
+  DateTime? _selectedStartDate;
+  TimeOfDay? _selectedStartTime;
+  DateTime? _selectedEndDate;
+  TimeOfDay? _selectedEndTime;
+  DateTime? _selectedRegistrationStartDate;
+  DateTime? _selectedRegistrationEndDate;
+  bool _unlimitedParticipants = false;
 
   bool _isLoading = true;
   bool _isAuthorized = false;
@@ -50,9 +61,29 @@ class _EditEventPageState extends State<EditEventPage> {
         _detailController.text = data['Detail'] ?? '';
         _locationController.text = data['Location'] ?? '';
         if (data['Date'] != null) {
-          _selectedDate = (data['Date'] as Timestamp).toDate();
-          _selectedTime = TimeOfDay.fromDateTime(_selectedDate!);
+          _selectedStartDate = (data['Date'] as Timestamp).toDate();
+          _selectedStartTime = TimeOfDay.fromDateTime(_selectedStartDate!);
         }
+        if (data['endDate'] != null) {
+          _selectedEndDate = (data['endDate'] as Timestamp).toDate();
+          _selectedEndTime = TimeOfDay.fromDateTime(_selectedEndDate!);
+        }
+        if (data['registrationStartDate'] != null) {
+          _selectedRegistrationStartDate = (data['registrationStartDate'] as Timestamp).toDate();
+          _registrationStartDateController.text = DateFormat('yyyy-MM-dd').format(_selectedRegistrationStartDate!);
+        }
+        if (data['registrationEndDate'] != null) {
+          _selectedRegistrationEndDate = (data['registrationEndDate'] as Timestamp).toDate();
+          _registrationEndDateController.text = DateFormat('yyyy-MM-dd').format(_selectedRegistrationEndDate!);
+        }
+        if (data['participantLimit'] != null) {
+          if (data['participantLimit'] == -1) {
+            _unlimitedParticipants = true;
+          } else {
+            _participantLimitController.text = data['participantLimit'].toString();
+          }
+        }
+
         setState(() {
           _isAuthorized = true;
           _isLoading = false;
@@ -71,28 +102,84 @@ class _EditEventPageState extends State<EditEventPage> {
     }
   }
 
-  Future<void> _selectDate(BuildContext context) async {
+  Future<void> _selectStartDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
+      initialDate: _selectedStartDate ?? DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime(2101),
     );
-    if (picked != null && picked != _selectedDate) {
+    if (picked != null && picked != _selectedStartDate) {
       setState(() {
-        _selectedDate = picked;
+        _selectedStartDate = picked;
       });
     }
   }
 
-  Future<void> _selectTime(BuildContext context) async {
+  Future<void> _selectStartTime(BuildContext context) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
-      initialTime: _selectedTime ?? TimeOfDay.now(),
+      initialTime: _selectedStartTime ?? TimeOfDay.now(),
     );
-    if (picked != null && picked != _selectedTime) {
+    if (picked != null && picked != _selectedStartTime) {
       setState(() {
-        _selectedTime = picked;
+        _selectedStartTime = picked;
+      });
+    }
+  }
+
+  Future<void> _selectEndDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedEndDate ?? _selectedStartDate ?? DateTime.now(),
+      firstDate: _selectedStartDate ?? DateTime.now(),
+      lastDate: DateTime(2101),
+    );
+    if (picked != null && picked != _selectedEndDate) {
+      setState(() {
+        _selectedEndDate = picked;
+      });
+    }
+  }
+
+  Future<void> _selectEndTime(BuildContext context) async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedEndTime ?? _selectedStartTime ?? TimeOfDay.now(),
+    );
+    if (picked != null && picked != _selectedEndTime) {
+      setState(() {
+        _selectedEndTime = picked;
+      });
+    }
+  }
+
+  Future<void> _selectRegistrationStartDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedRegistrationStartDate ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: _selectedStartDate ?? DateTime(2101),
+    );
+    if (picked != null && picked != _selectedRegistrationStartDate) {
+      setState(() {
+        _selectedRegistrationStartDate = picked;
+        _registrationStartDateController.text = DateFormat('yyyy-MM-dd').format(picked);
+      });
+    }
+  }
+
+  Future<void> _selectRegistrationEndDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedRegistrationEndDate ?? _selectedRegistrationStartDate ?? DateTime.now(),
+      firstDate: _selectedRegistrationStartDate ?? DateTime.now(),
+      lastDate: _selectedStartDate ?? DateTime(2101),
+    );
+    if (picked != null && picked != _selectedRegistrationEndDate) {
+      setState(() {
+        _selectedRegistrationEndDate = picked;
+        _registrationEndDateController.text = DateFormat('yyyy-MM-dd').format(picked);
       });
     }
   }
@@ -157,12 +244,12 @@ class _EditEventPageState extends State<EditEventPage> {
               Row(
                 children: [
                   Expanded(
-                    child: Text(_selectedDate == null
-                        ? 'No date selected'
-                        : 'Date: ${_selectedDate!.toLocal()}'.split(' ')[0]),
+                    child: Text(_selectedStartDate == null
+                        ? 'No start date selected'
+                        : 'Start Date: ${DateFormat('yyyy-MM-dd').format(_selectedStartDate!)}'),
                   ),
                   TextButton(
-                    onPressed: () => _selectDate(context),
+                    onPressed: () => _selectStartDate(context),
                     child: const Text('Select Date'),
                   ),
                 ],
@@ -170,14 +257,95 @@ class _EditEventPageState extends State<EditEventPage> {
               Row(
                 children: [
                   Expanded(
-                    child: Text(_selectedTime == null
-                        ? 'No time selected'
-                        : 'Time: ${_selectedTime!.format(context)}'),
+                    child: Text(_selectedStartTime == null
+                        ? 'No start time selected'
+                        : 'Start Time: ${_selectedStartTime!.format(context)}'),
                   ),
                   TextButton(
-                    onPressed: () => _selectTime(context),
+                    onPressed: () => _selectStartTime(context),
                     child: const Text('Select Time'),
                   ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(_selectedEndDate == null
+                        ? 'No end date selected'
+                        : 'End Date: ${DateFormat('yyyy-MM-dd').format(_selectedEndDate!)}'),
+                  ),
+                  TextButton(
+                    onPressed: () => _selectEndDate(context),
+                    child: const Text('Select Date'),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(_selectedEndTime == null
+                        ? 'No end time selected'
+                        : 'End Time: ${_selectedEndTime!.format(context)}'),
+                  ),
+                  TextButton(
+                    onPressed: () => _selectEndTime(context),
+                    child: const Text('Select Time'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 16),
+              Text('Registration Settings', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _registrationStartDateController,
+                      readOnly: true,
+                      onTap: () => _selectRegistrationStartDate(context),
+                      decoration: const InputDecoration(labelText: 'Registration Start'),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _registrationEndDateController,
+                      readOnly: true,
+                      onTap: () => _selectRegistrationEndDate(context),
+                      decoration: const InputDecoration(labelText: 'Registration End'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _participantLimitController,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      enabled: !_unlimitedParticipants,
+                      decoration: const InputDecoration(labelText: 'Participant Limit'),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Column(
+                    children: [
+                      const Text('Unlimited'),
+                      Switch(
+                        value: _unlimitedParticipants,
+                        onChanged: (value) {
+                          setState(() {
+                            _unlimitedParticipants = value;
+                          });
+                        },
+                      ),
+                    ],
+                  )
                 ],
               ),
               const SizedBox(height: 16),
@@ -188,15 +356,27 @@ class _EditEventPageState extends State<EditEventPage> {
                       'Name': _nameController.text,
                       'Detail': _detailController.text,
                       'Location': _locationController.text,
-                      'Date': _selectedDate != null && _selectedTime != null
+                      'Date': _selectedStartDate != null && _selectedStartTime != null
                           ? Timestamp.fromDate(DateTime(
-                              _selectedDate!.year,
-                              _selectedDate!.month,
-                              _selectedDate!.day,
-                              _selectedTime!.hour,
-                              _selectedTime!.minute,
+                              _selectedStartDate!.year,
+                              _selectedStartDate!.month,
+                              _selectedStartDate!.day,
+                              _selectedStartTime!.hour,
+                              _selectedStartTime!.minute,
                             ))
                           : null,
+                      'endDate': _selectedEndDate != null && _selectedEndTime != null
+                          ? Timestamp.fromDate(DateTime(
+                              _selectedEndDate!.year,
+                              _selectedEndDate!.month,
+                              _selectedEndDate!.day,
+                              _selectedEndTime!.hour,
+                              _selectedEndTime!.minute,
+                            ))
+                          : null,
+                      'registrationStartDate': _selectedRegistrationStartDate,
+                      'registrationEndDate': _selectedRegistrationEndDate,
+                      'participantLimit': _unlimitedParticipants ? -1 : int.tryParse(_participantLimitController.text),
                     };
                     await DatabaseMethods().updateEvent(widget.eventId, eventData);
                     Navigator.of(context).pop();

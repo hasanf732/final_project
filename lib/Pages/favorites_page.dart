@@ -48,8 +48,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
           return events.where((event) {
             if (!event.exists) return false;
             final data = event.data() as Map<String, dynamic>;
-            final eventDate = (data['Date'] as Timestamp).toDate();
-            return !eventDate.isBefore(startOfToday);
+            final eventDate = (data['endDate'] ?? data['Date']) as Timestamp?;
+            if (eventDate == null) return false;
+            return !eventDate.toDate().isBefore(startOfToday);
           }).toList();
         });
       });
@@ -88,9 +89,22 @@ class _FavoritesPageState extends State<FavoritesPage> {
             itemBuilder: (context, index) {
               var eventData = favoriteDocs[index].data() as Map<String, dynamic>;
               var eventId = favoriteDocs[index].id;
-              final date = eventData['Date']?.toDate();
-              final String formattedDate = date != null ? DateFormat('MMM dd, yyyy').format(date) : "Date N/A";
-              final String formattedTime = date != null ? DateFormat('h:mm a').format(date) : "";
+              final startDate = eventData['Date'] as Timestamp?;
+              final endDate = eventData['endDate'] as Timestamp?;
+
+              String formattedDate;
+              if (startDate != null) {
+                if (endDate != null &&
+                    (endDate.toDate().difference(startDate.toDate()).inDays > 0 ||
+                        endDate.toDate().day != startDate.toDate().day)) {
+                  formattedDate =
+                      '${DateFormat('MMM dd').format(startDate.toDate())} - ${DateFormat('MMM dd, yyyy').format(endDate.toDate())}';
+                } else {
+                  formattedDate = DateFormat('MMM dd, yyyy').format(startDate.toDate());
+                }
+              } else {
+                formattedDate = "Date N/A";
+              }
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 16.0),
@@ -105,7 +119,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
                     ),
                   ),
                   title: Text(eventData['Name'] ?? 'Unnamed Event', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(eventData['Location'] ?? 'No location'),
+                  subtitle: Text("${eventData['Location'] ?? 'No location'}\n$formattedDate"),
+                  isThreeLine: true,
                   trailing: IconButton(
                     icon: Icon(Icons.bookmark, color: Theme.of(context).colorScheme.primary),
                     onPressed: () {
@@ -113,6 +128,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                     },
                   ),
                   onTap: () {
+                    if (startDate == null) return;
                      Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -120,10 +136,10 @@ class _FavoritesPageState extends State<FavoritesPage> {
                           id: eventId,
                           image: eventData['Image'] ?? '',
                           name: eventData['Name'] ?? 'Untitled Event',
-                          date: formattedDate,
+                          startDate: startDate,
+                          endDate: endDate,
                           location: eventData['Location'] ?? 'No location specified',
                           detail: eventData['Detail'] ?? 'No details available',
-                          time: formattedTime,
                         ),
                       ),
                     );

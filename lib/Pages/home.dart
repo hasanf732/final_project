@@ -192,9 +192,10 @@ class _HomeState extends State<Home> {
     final startOfToday = DateTime(now.year, now.month, now.day);
     return events.where((doc) {
       final data = doc.data() as Map<String, dynamic>?;
-      if (data == null || data['Date'] == null) return false;
-      final eventDate = (data['Date'] as Timestamp).toDate();
-      return !eventDate.isBefore(startOfToday);
+      if (data == null) return false;
+      final eventDate = (data['endDate'] ?? data['Date']) as Timestamp?;
+      if (eventDate == null) return false;
+      return !eventDate.toDate().isBefore(startOfToday);
     }).toList();
   }
 
@@ -547,143 +548,148 @@ class _HomeState extends State<Home> {
   }
 
   Widget _buildEventCard(DocumentSnapshot event, {bool isBookmarked = false, bool isFeatured = false, double? distance}) {
-  final data = event.data() as Map<String, dynamic>;
-  final theme = Theme.of(context);
+    final data = event.data() as Map<String, dynamic>;
+    final theme = Theme.of(context);
 
-  final date = data['Date']?.toDate();
-  final String formattedDate = date != null ? DateFormat('MMM dd, yyyy').format(date) : "Date N/A";
-  final String formattedTime = date != null ? DateFormat('h:mm a').format(date) : "";
+    final startDate = data['Date'] as Timestamp?;
+    final endDate = data['endDate'] as Timestamp?;
 
-  final cardWidth = isFeatured ? 280.0 : null;
-
-  final card = Material(
-    color: theme.cardColor,
-    borderRadius: BorderRadius.circular(16),
-    elevation: 2,
-    shadowColor: Colors.black.withAlpha(26),
-    child: InkWell(
+    final card = Material(
+      color: theme.cardColor,
       borderRadius: BorderRadius.circular(16),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DetailPage(
-              id: event.id,
-              image: data['Image'] ?? '',
-              name: data['Name'] ?? 'Untitled Event',
-              date: formattedDate,
-              location: data['Location'] ?? 'No location',
-              detail: data['Detail'] ?? '',
-              time: formattedTime,
-            ),
-          ),
-        );
-      },
-      child: SizedBox(
-        width: cardWidth,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(16),
-                    topRight: Radius.circular(16),
-                  ),
-                  child: Image.network(
-                    data['Image'] ?? 'https://via.placeholder.com/280x120',
-                    height: 120,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      height: 120,
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.image_not_supported, color: Colors.grey),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: GestureDetector(
-                    onTap: () => _toggleBookmark(event.id),
-                    child: CircleAvatar(
-                      backgroundColor: Colors.black.withAlpha(102),
-                      radius: 18,
-                      child: Icon(
-                        isBookmarked ? Icons.bookmark : Icons.bookmark_border,
-                        color: isBookmarked ? theme.colorScheme.primary : Colors.white,
-                        size: 22,
-                      ),
-                    ),
-                  ),
-                ),
-                if (distance != null)
-                  Positioned(
-                    bottom: 8,
-                    left: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.6),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${(distance / 1000).toStringAsFixed(1)} km away',
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    data['Name'] ?? 'Untitled Event',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Icon(Icons.calendar_today, size: 14, color: theme.colorScheme.primary),
-                      const SizedBox(width: 6),
-                      Text(formattedDate, style: theme.textTheme.bodySmall),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.location_on, size: 14, color: theme.colorScheme.primary),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          data['Location'] ?? 'No location',
-                          style: theme.textTheme.bodySmall,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+      elevation: 2,
+      shadowColor: Colors.black.withAlpha(26),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          if (startDate == null) return;
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DetailPage(
+                id: event.id,
+                image: data['Image'] ?? '',
+                name: data['Name'] ?? 'Untitled Event',
+                startDate: startDate,
+                endDate: endDate,
+                location: data['Location'] ?? 'No location',
+                detail: data['Detail'] ?? '',
               ),
             ),
-          ],
+          );
+        },
+        child: SizedBox(
+          width: isFeatured ? 280 : null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
+                    ),
+                    child: Image.network(
+                      data['Image'] ?? 'https://via.placeholder.com/280x120',
+                      height: 120,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        height: 120,
+                        color: Colors.grey[300],
+                        child: const Icon(Icons.image_not_supported, color: Colors.grey),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: GestureDetector(
+                      onTap: () => _toggleBookmark(event.id),
+                      child: CircleAvatar(
+                        backgroundColor: Colors.black.withAlpha(102),
+                        radius: 18,
+                        child: Icon(
+                          isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+                          color: isBookmarked ? theme.colorScheme.primary : Colors.white,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (distance != null)
+                    Positioned(
+                      bottom: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.6),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${(distance / 1000).toStringAsFixed(1)} km away',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      data['Name'] ?? 'Untitled Event',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(Icons.calendar_today, size: 14, color: theme.colorScheme.primary),
+                        const SizedBox(width: 6),
+                        Text(
+                          startDate != null
+                              ? (endDate != null
+                                  ? '${DateFormat('MMM dd').format(startDate.toDate())} - ${DateFormat('MMM dd, yyyy').format(endDate.toDate())}'
+                                  : DateFormat('MMM dd, yyyy').format(startDate.toDate()))
+                              : "Date N/A",
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.location_on, size: 14, color: theme.colorScheme.primary),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            data['Location'] ?? 'No location',
+                            style: theme.textTheme.bodySmall,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
 
-  return isFeatured
-      ? Padding(padding: const EdgeInsets.only(right: 16), child: card)
-      : card;
-}
+    return isFeatured
+        ? Padding(padding: const EdgeInsets.only(right: 16), child: card)
+        : card;
+  }
 
 Widget _buildShimmerPlaceholder() {
   return Column(
