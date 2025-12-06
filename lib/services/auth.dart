@@ -13,7 +13,9 @@ class AuthMethods {
     try {
       DocumentSnapshot userDoc = await _firestore.collection('users').doc(user.uid).get();
       if (userDoc.exists && userDoc.data() != null) {
-        return (userDoc.data() as Map<String, dynamic>)['role'] == 'admin';
+        final data = userDoc.data() as Map<String, dynamic>;
+        // Check for both 'role' and 'isAdmin' fields for robustness
+        return data['role'] == 'admin' || data['isAdmin'] == true;
       }
       return false;
     } catch (e) {

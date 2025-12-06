@@ -42,12 +42,15 @@ class _BookingState extends State<Booking> with SingleTickerProviderStateMixin {
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: const [
-          BookedEventsList(status: 'bookedEvents'),
-          BookedEventsList(status: 'attendedEvents'),
-        ],
+      body: Padding(
+        padding: const EdgeInsets.only(bottom: 100.0),
+        child: TabBarView(
+          controller: _tabController,
+          children: const [
+            BookedEventsList(status: 'bookedEvents'),
+            BookedEventsList(status: 'attendedEvents'),
+          ],
+        ),
       ),
     );
   }

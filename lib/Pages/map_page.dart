@@ -252,6 +252,16 @@ class _MapPageState extends State<MapPage> {
                 },
               ),
               _buildSearchAndFilterUI(),
+              // Padding for the bottom navigation bar
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  height: 100,
+                  color: Colors.transparent,
+                ),
+              ),
             ],
           );
         },

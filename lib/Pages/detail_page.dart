@@ -671,6 +671,13 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   }
 
   Widget _buildRegisterButton(ThemeData theme) {
+    if (_isAdmin) {
+      return const ElevatedButton(
+        onPressed: null,
+        style: ButtonStyle(minimumSize: MaterialStatePropertyAll(Size(double.infinity, 50))),
+        child: Text("Admins cannot register"),
+      );
+    }
     return StreamBuilder<int>(
       stream: DatabaseMethods().getEventRegistrationCount(widget.id),
       builder: (context, snapshot) {

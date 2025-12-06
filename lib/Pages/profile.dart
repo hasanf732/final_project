@@ -49,30 +49,37 @@ class _ProfileState extends State<Profile> {
         DocumentSnapshot userDoc = await DatabaseMethods().getUser(user.uid);
         if (userDoc.exists && userDoc.data() != null && mounted) {
           Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-          List<String> bookedEventIds = List<String>.from(userData['bookedEvents'] ?? []);
+          
+          // Check for admin role
+          final bool isAdmin = (userData['role'] == 'admin') || (userData['isAdmin'] == true);
 
-          int upcoming = 0;
-          int attended = 0;
+          if (!isAdmin) {
+            List<String> bookedEventIds = List<String>.from(userData['bookedEvents'] ?? []);
+            int upcoming = 0;
+            int attended = 0;
 
-          for (String eventId in bookedEventIds) {
-            DocumentSnapshot eventDoc = await DatabaseMethods().getEventById(eventId);
-            if (eventDoc.exists) {
-              final eventData = eventDoc.data() as Map<String, dynamic>;
-              final eventDate = (eventData['Date'] as Timestamp).toDate();
-              if (eventDate.isAfter(DateTime.now())) {
-                upcoming++;
-              } else {
-                attended++;
+            for (String eventId in bookedEventIds) {
+              DocumentSnapshot eventDoc = await DatabaseMethods().getEventById(eventId);
+              if (eventDoc.exists) {
+                final eventData = eventDoc.data() as Map<String, dynamic>;
+                final eventDate = (eventData['Date'] as Timestamp).toDate();
+                if (eventDate.isAfter(DateTime.now())) {
+                  upcoming++;
+                } else {
+                  attended++;
+                }
               }
             }
+             setState(() {
+              _upcomingEventsCount = upcoming;
+              _attendedEventsCount = attended;
+            });
           }
 
           setState(() {
             _userName = userData['Name'] ?? 'No Name';
             _userMajor = userData['Major'] ?? "Not Set";
-            _isAdmin = userData['isAdmin'] ?? false;
-            _upcomingEventsCount = upcoming;
-            _attendedEventsCount = attended;
+            _isAdmin = isAdmin;
           });
         }
       } catch (e) {
@@ -130,12 +137,12 @@ class _ProfileState extends State<Profile> {
         elevation: 0,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
+        padding: const EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 100.0),
         child: Column(
           children: [
             _buildHeader(),
             const SizedBox(height: 30),
-            _buildStatsSection(),
+            if (!_isAdmin) _buildStatsSection(),
             const SizedBox(height: 10),
             _buildMenu(),
             const SizedBox(height: 20),
@@ -225,15 +232,6 @@ class _ProfileState extends State<Profile> {
         ),
         child: Column(
         children: [
-          if (_isAdmin) ...[
-             ListTile(
-              leading: Icon(Icons.admin_panel_settings, color: theme.colorScheme.primary),
-              title: const Text("Admin Panel"),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminPage())),
-            ),
-            const Divider(indent: 16, endIndent: 16, height: 1),
-          ],
            SwitchListTile(
             title: const Text('Dark Mode'),
             secondary: Icon(Icons.dark_mode_outlined, color: theme.colorScheme.primary),
@@ -243,13 +241,15 @@ class _ProfileState extends State<Profile> {
               themeProvider.setDarkTheme(value);
             },
           ),
-          const Divider(indent: 16, endIndent: 16, height: 1),
-          ListTile(
-            leading: Icon(Icons.calendar_today_outlined, color: theme.colorScheme.primary),
-            title: const Text("My Bookings"),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const Booking())),
-          ),
+          if (!_isAdmin) ...[
+            const Divider(indent: 16, endIndent: 16, height: 1),
+            ListTile(
+              leading: Icon(Icons.calendar_today_outlined, color: theme.colorScheme.primary),
+              title: const Text("My Bookings"),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const Booking())),
+            ),
+          ],
           const Divider(indent: 16, endIndent: 16, height: 1),
           ListTile(
             leading: Icon(Icons.edit_outlined, color: theme.colorScheme.primary),

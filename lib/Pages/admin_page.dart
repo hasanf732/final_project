@@ -12,14 +12,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-class AdminPage extends StatefulWidget {
-  const AdminPage({super.key});
+class AdminPanelPage extends StatefulWidget {
+  const AdminPanelPage({super.key});
 
   @override
-  State<AdminPage> createState() => _AdminPageState();
+  State<AdminPanelPage> createState() => _AdminPanelPageState();
 }
 
-class _AdminPageState extends State<AdminPage> with SingleTickerProviderStateMixin {
+class _AdminPanelPageState extends State<AdminPanelPage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   @override

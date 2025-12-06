@@ -298,7 +298,7 @@ class _HomeState extends State<Home> {
         _buildHorizontalEventsList(getTopRatedEvents(allEvents)),
         _buildSectionHeader("Nearest To You 📍"),
         _buildVerticalEventsList(getNearestEvents(allEvents)),
-        const SizedBox(height: 30),
+        const SizedBox(height: 100),
       ]),
     );
   }
@@ -409,6 +409,9 @@ class _HomeState extends State<Home> {
       return SliverList(
         delegate: SliverChildBuilderDelegate(
           (context, index) {
+            if (index == events.length) {
+                return const SizedBox(height: 100);
+            }
             final event = events[index];
             return Padding(
               padding: const EdgeInsets.fromLTRB(20.0, 0, 20.0, 16.0),
@@ -416,7 +419,7 @@ class _HomeState extends State<Home> {
                   isBookmarked: _bookmarkedEventIds.contains(event.id)),
             );
           },
-          childCount: events.length,
+          childCount: events.length + 1,
         ),
       );
   }
