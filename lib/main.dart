@@ -1,4 +1,5 @@
 import 'package:final_project/Pages/splash_screen.dart';
+import 'package:final_project/services/notification_service.dart';
 import 'package:final_project/services/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -20,6 +21,7 @@ void main() async {
     appleProvider: AppleProvider.debug,
   );
   await _requestLocationPermission();
+  await NotificationService().initNotifications();
 
   runApp(
     ChangeNotifierProvider(

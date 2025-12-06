@@ -7,12 +7,19 @@ class DatabaseMethods {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  Future<void> saveUserToken(String token, String uid) async {
+    await _firestore.collection('users').doc(uid).set({
+      'fcmToken': token,
+    }, SetOptions(merge: true));
+  }
+
   Future<bool> isAdmin() async {
     final user = _auth.currentUser;
     if (user == null) return false;
     final userDoc = await _firestore.collection('users').doc(user.uid).get();
     if (!userDoc.exists || userDoc.data() == null) return false;
-    return userDoc.data()!['isAdmin'] == true;
+    final data = userDoc.data() as Map<String, dynamic>;
+    return data['role'] == 'admin' || data['isAdmin'] == true;
   }
 
   Future<void> deleteEvent(String eventId) async {
