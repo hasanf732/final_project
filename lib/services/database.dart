@@ -23,6 +23,10 @@ class DatabaseMethods {
     await _firestore.collection('News').doc(eventId).update(eventData);
   }
 
+  Future<void> updateUser(String uid, Map<String, dynamic> userData) async {
+    await _firestore.collection('users').doc(uid).update(userData);
+  }
+
   Future<void> addUserDetail(Map<String, dynamic> userinfoMap, String id) async {
     await _firestore.collection("users").doc(id).set(userinfoMap, SetOptions(merge: true));
   }

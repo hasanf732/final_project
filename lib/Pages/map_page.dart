@@ -10,6 +10,7 @@ import 'package:google_maps_cluster_manager_2/google_maps_cluster_manager_2.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class Place with cluster_manager.ClusterItem {
   final String id;
@@ -182,14 +183,22 @@ class _MapPageState extends State<MapPage> {
   }
 
   Future<void> _getCurrentLocation() async {
-    try {
-      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      if (mounted) {
-        setState(() => _currentPosition = position);
-        _animateToUser();
+    var status = await Permission.location.request();
+    if (status.isGranted) {
+      try {
+        Position position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 10),
+        );
+        if (mounted) {
+          setState(() => _currentPosition = position);
+          _animateToUser();
+        }
+      } catch (e) {
+        // Handle error getting current location or timeout
       }
-    } catch (e) {
-      // Handle error getting current location
+    } else {
+      // Handle permission denied
     }
   }
 

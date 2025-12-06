@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:final_project/Pages/admin_page.dart';
 import 'package:final_project/Pages/booking.dart';
+import 'package:final_project/Pages/edit_profile_page.dart';
+import 'package:final_project/Pages/notifications_page.dart';
 import 'package:final_project/services/auth.dart';
 import 'package:final_project/services/database.dart';
 import 'package:final_project/services/theme_provider.dart';
@@ -8,6 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class Profile extends StatefulWidget {
@@ -156,15 +159,21 @@ class _ProfileState extends State<Profile> {
             Positioned(
               bottom: 0,
               right: 0,
-              child: Container(
-                height: 40,
-                width: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Theme.of(context).cardColor, // Use theme color
-                  border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 2)
+              child: GestureDetector(
+                onTap: () async {
+                  await Navigator.push(context, MaterialPageRoute(builder: (context) => const EditProfilePage()));
+                  _loadUserData();
+                },
+                child: Container(
+                  height: 40,
+                  width: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Theme.of(context).cardColor, // Use theme color
+                    border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 2)
+                  ),
+                  child: Icon(Icons.edit, color: Theme.of(context).colorScheme.primary, size: 20),
                 ),
-                child: Icon(Icons.edit, color: Theme.of(context).colorScheme.primary, size: 20),
               ),
             ),
           ],
@@ -229,7 +238,6 @@ class _ProfileState extends State<Profile> {
             title: const Text('Dark Mode'),
             secondary: Icon(Icons.dark_mode_outlined, color: theme.colorScheme.primary),
             value: themeProvider.darkTheme,
-            activeThumbImage: const AssetImage('assets/images/sun.png'),
             inactiveThumbColor: theme.colorScheme.onSurface.withAlpha(51),
             onChanged: (value) {
               themeProvider.setDarkTheme(value);
@@ -247,14 +255,17 @@ class _ProfileState extends State<Profile> {
             leading: Icon(Icons.edit_outlined, color: theme.colorScheme.primary),
             title: const Text("Edit Profile"),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () {},
+            onTap: () async {
+              await Navigator.push(context, MaterialPageRoute(builder: (context) => const EditProfilePage()));
+              _loadUserData();
+            },
           ),
            const Divider(indent: 16, endIndent: 16, height: 1),
           ListTile(
             leading: Icon(Icons.notifications_outlined, color: theme.colorScheme.primary),
             title: const Text("Notifications"),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () {},
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationsPage())),
           ),
            const Divider(indent: 16, endIndent: 16, height: 1),
           ListTile(
@@ -268,7 +279,7 @@ class _ProfileState extends State<Profile> {
             leading: Icon(Icons.share_outlined, color: theme.colorScheme.primary),
             title: const Text("Share UniVent"),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () {},
+            onTap: () => Share.share('Check out UniVent, an awesome app for university events!'),
           ),
         ],
       ),

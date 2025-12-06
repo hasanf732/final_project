@@ -41,6 +41,8 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   Timer? _reviewRequestTimer;
   bool _isAdmin = false;
   String? _creatorId;
+  bool _showReviews = false;
+
 
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
@@ -408,24 +410,44 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                 ],
               ),
             ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _isReviewSectionExpanded = !_isReviewSectionExpanded;
-                });
-              },
-              child: Row(
-                children: [
-                  Text(_isReviewSectionExpanded ? "Hide" : "Write a Review"),
-                  Icon(_isReviewSectionExpanded ? Icons.arrow_drop_up : Icons.arrow_drop_down),
-                ],
-              ),
-            )
           ],
         ),
-        if (_isReviewSectionExpanded) _buildReviewEditor(theme),
         const SizedBox(height: 20),
-        _isLoadingReviews ? _buildReviewShimmer(theme) : _buildReviewList(theme),
+        _buildReviewButtons(theme),
+        if (_isReviewSectionExpanded) _buildReviewEditor(theme),
+        if (_showReviews)
+          _isLoadingReviews ? _buildReviewShimmer(theme) : _buildReviewList(theme),
+      ],
+    );
+  }
+
+  Widget _buildReviewButtons(ThemeData theme) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        if (_reviews.isNotEmpty)
+          TextButton.icon(
+            onPressed: () {
+              setState(() {
+                _showReviews = !_showReviews;
+              });
+            },
+            icon: Icon(_showReviews ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+            label: Text(_showReviews ? "Hide Reviews" : "Show Reviews"),
+          ),
+        ElevatedButton.icon(
+          onPressed: () {
+            setState(() {
+              _isReviewSectionExpanded = !_isReviewSectionExpanded;
+            });
+          },
+          icon: Icon(_isReviewSectionExpanded ? Icons.cancel_outlined : Icons.rate_review_outlined),
+          label: Text(_isReviewSectionExpanded ? "Cancel" : "Rate Event"),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _isReviewSectionExpanded ? Colors.grey : theme.colorScheme.primary,
+            foregroundColor: _isReviewSectionExpanded ? Colors.white : theme.colorScheme.onPrimary,
+          ),
+        ),
       ],
     );
   }

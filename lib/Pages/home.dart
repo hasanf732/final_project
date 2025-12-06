@@ -25,13 +25,7 @@ class _HomeState extends State<Home> {
   Position? _currentPosition;
 
   StreamSubscription? _bookmarksSubscription;
-  StreamSubscription? _positionStreamSubscription;
   StreamSubscription? _userEventsSubscription;
-
-  Stream<List<MapEntry<DocumentSnapshot, double>>>? _nearestEventsStream;
-  Stream<List<DocumentSnapshot>>? _discoverEventsStream;
-  Stream<List<DocumentSnapshot>>? _hotEventsStream;
-  Stream<List<DocumentSnapshot>>? _topRatedEventsStream;
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
@@ -70,7 +64,6 @@ class _HomeState extends State<Home> {
   void dispose() {
     _searchController.dispose();
     _bookmarksSubscription?.cancel();
-    _positionStreamSubscription?.cancel();
     _userEventsSubscription?.cancel();
     super.dispose();
   }
@@ -78,16 +71,15 @@ class _HomeState extends State<Home> {
   Future<void> _loadInitialData() async {
     await _loadUserData();
     _listenToBookmarks();
-    _listenToLocationUpdates();
     _listenToUserEvents();
-    _initializeStreams();
+    await _determinePosition();
   }
 
-  void _initializeStreams() {
-    _discoverEventsStream = discoverEventsStream();
-    _hotEventsStream = hotEventsStream();
-    _topRatedEventsStream = topRatedEventsStream();
-    _nearestEventsStream = nearestEventsStream();
+  Future<void> _handleRefresh() async {
+    await _loadInitialData();
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -107,6 +99,33 @@ class _HomeState extends State<Home> {
           setState(() => _userName = "User");
         }
       }
+    }
+  }
+
+  Future<void> _determinePosition() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    try {
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+
+      if (permission == LocationPermission.deniedForever) return;
+
+      Position position = await Geolocator.getCurrentPosition(timeLimit: const Duration(seconds: 5));
+      if (mounted) {
+        setState(() {
+          _currentPosition = position;
+        });
+      }
+    } catch (e) {
+      // Silently catch errors.
     }
   }
 
@@ -156,43 +175,6 @@ class _HomeState extends State<Home> {
     }
   }
 
-  void _listenToLocationUpdates() async {
-    try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        return;
-      }
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission != LocationPermission.whileInUse &&
-            permission != LocationPermission.always) {
-          return;
-        }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        return;
-      }
-
-      const LocationSettings locationSettings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 100, // meters
-      );
-
-      _positionStreamSubscription =
-          Geolocator.getPositionStream(locationSettings: locationSettings)
-              .listen((Position? position) {
-        if (mounted && position != null) {
-          setState(() {
-            _currentPosition = position;
-          });
-        }
-      }, onError: (e) {});
-    } catch (e) {}
-  }
-
   void _toggleBookmark(String eventId) {
     setState(() {
       if (_bookmarkedEventIds.contains(eventId)) {
@@ -204,15 +186,13 @@ class _HomeState extends State<Home> {
       }
     });
   }
-  
+
   List<DocumentSnapshot> _filterUpcomingEvents(List<DocumentSnapshot> events) {
     final now = DateTime.now();
     final startOfToday = DateTime(now.year, now.month, now.day);
     return events.where((doc) {
       final data = doc.data() as Map<String, dynamic>?;
-      if (data == null || data['Date'] == null) {
-        return false;
-      }
+      if (data == null || data['Date'] == null) return false;
       final eventDate = (data['Date'] as Timestamp).toDate();
       return !eventDate.isBefore(startOfToday);
     }).toList();
@@ -225,124 +205,146 @@ class _HomeState extends State<Home> {
     final bool isFiltering = _selectedCategory != null;
 
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            pinned: true,
-            floating: true,
-            elevation: 0,
-            backgroundColor: theme.scaffoldBackgroundColor.withAlpha(230),
-            title: Text(
-              "Hello, ${_userName.isNotEmpty ? _userName : 'User'}!",
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            actions: [
-              IconButton(
-                icon: Icon(Icons.bookmarks,
-                    color: theme.colorScheme.primary, size: 28),
-                onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => const FavoritesPage())),
+      body: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              floating: true,
+              elevation: 0,
+              backgroundColor: theme.scaffoldBackgroundColor.withAlpha(230),
+              title: Text(
+                "Hello, ${_userName.isNotEmpty ? _userName : 'User'}!",
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
-            ],
-          ),
-          SliverToBoxAdapter(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20.0, vertical: 10),
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: _hintTexts.first,
-                      prefixIcon: const Icon(Icons.search),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: Theme.of(context).colorScheme.surface,
-                    ),
-                  ),
+              actions: [
+                IconButton(
+                  icon: Icon(Icons.bookmarks, color: theme.colorScheme.primary, size: 28),
+                  onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const FavoritesPage())),
                 ),
-                const SizedBox(height: 12),
-                _buildCategorySelector(),
               ],
             ),
-          ),
-          if (isSearching || isFiltering)
-            _buildFilteredList()
-          else ...[
-            _buildSectionHeader("Discover 🚀"),
-            _buildHorizontalEventsList(_discoverEventsStream),
-            _buildSectionHeader("What's Hot 🔥"),
-            _buildHorizontalEventsList(_hotEventsStream),
-            _buildSectionHeader("Top Rated ⭐"),
-            _buildHorizontalEventsList(_topRatedEventsStream),
-            _buildSectionHeader("Nearest To You 📍"),
-            _buildVerticalEventsList(_nearestEventsStream),
+            SliverToBoxAdapter(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20.0, vertical: 10),
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: _hintTexts.first,
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: Theme.of(context).colorScheme.surface,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildCategorySelector(),
+                ],
+              ),
+            ),
+            StreamBuilder<QuerySnapshot>(
+              stream: DatabaseMethods().getEventDetails(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return SliverList(delegate: SliverChildListDelegate([_buildShimmerPlaceholder()]));
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const SliverToBoxAdapter(
+                    child: Center(
+                      heightFactor: 10,
+                      child: Text("No events available right now."),
+                    ),
+                  );
+                }
+
+                List<DocumentSnapshot> allEvents = _filterUpcomingEvents(snapshot.data!.docs);
+
+                if (isSearching || isFiltering) {
+                  return _buildFilteredList(allEvents);
+                }
+                
+                return _buildHomeContent(allEvents);
+              },
+            ),
           ],
-          const SliverToBoxAdapter(child: SizedBox(height: 30)),
-        ],
+        ),
       ),
     );
   }
 
-  Stream<List<DocumentSnapshot>> discoverEventsStream() {
-    return DatabaseMethods().getEventDetails().map((snapshot) {
-      var docs = _filterUpcomingEvents(snapshot.docs);
-      docs.sort((a, b) {
-        var aDate = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-        var bDate = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-        if (aDate == null && bDate == null) return 0;
-        if (aDate == null) return 1;
-        if (bDate == null) return -1;
-        return bDate.compareTo(aDate);
-      });
-      return docs.take(7).toList();
-    });
+  Widget _buildHomeContent(List<DocumentSnapshot> allEvents) {
+    return SliverList(
+      delegate: SliverChildListDelegate([
+        _buildSectionHeader("Discover 🚀"),
+        _buildHorizontalEventsList(getDiscoverEvents(allEvents)),
+        _buildSectionHeader("What's Hot 🔥"),
+        _buildHorizontalEventsList(getHotEvents(allEvents)),
+        _buildSectionHeader("Top Rated ⭐"),
+        _buildHorizontalEventsList(getTopRatedEvents(allEvents)),
+        _buildSectionHeader("Nearest To You 📍"),
+        _buildVerticalEventsList(getNearestEvents(allEvents)),
+        const SizedBox(height: 30),
+      ]),
+    );
   }
 
-  Stream<List<DocumentSnapshot>> hotEventsStream() {
-    return DatabaseMethods().getEventDetails().map((snapshot) {
-      var docs = _filterUpcomingEvents(snapshot.docs).where((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        return data.containsKey('ratings') && (data['ratings'] as Map).isNotEmpty;
-      }).toList();
-
-      docs.sort((a, b) {
-        var aRatings = (a.data() as Map<String, dynamic>)['ratings']?.length ?? 0;
-        var bRatings = (b.data() as Map<String, dynamic>)['ratings']?.length ?? 0;
-        return bRatings.compareTo(aRatings);
-      });
-
-      return docs.take(7).toList();
+  List<DocumentSnapshot> getDiscoverEvents(List<DocumentSnapshot> allEvents) {
+    allEvents.sort((a, b) {
+      var aDate = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+      var bDate = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+      if (aDate == null && bDate == null) return 0;
+      if (aDate == null) return 1;
+      if (bDate == null) return -1;
+      return bDate.compareTo(aDate);
     });
+    return allEvents.take(7).toList();
   }
 
-  Stream<List<DocumentSnapshot>> topRatedEventsStream() {
-    return DatabaseMethods().getEventDetails().map((snapshot) {
-      var docsWithRatings = _filterUpcomingEvents(snapshot.docs).map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        final double avgRating = _calculateAverageRating(data['ratings']);
-        return MapEntry(doc, avgRating);
-      }).where((entry) => entry.value > 0).toList();
+  List<DocumentSnapshot> getHotEvents(List<DocumentSnapshot> allEvents) {
+    var docs = allEvents.where((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      return data.containsKey('ratings') && (data['ratings'] as Map).isNotEmpty;
+    }).toList();
 
-      docsWithRatings.sort((a, b) => b.value.compareTo(a.value));
-
-      return docsWithRatings.map((entry) => entry.key).take(7).toList();
+    docs.sort((a, b) {
+      var aRatings = (a.data() as Map<String, dynamic>)['ratings']?.length ?? 0;
+      var bRatings = (b.data() as Map<String, dynamic>)['ratings']?.length ?? 0;
+      return bRatings.compareTo(aRatings);
     });
+
+    return docs.take(7).toList();
   }
 
-  Stream<List<MapEntry<DocumentSnapshot, double>>> nearestEventsStream() {
-  return DatabaseMethods().getEventDetails().map((snapshot) {
+  List<DocumentSnapshot> getTopRatedEvents(List<DocumentSnapshot> allEvents) {
+    var docsWithRatings = allEvents.map((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      final double avgRating = _calculateAverageRating(data['ratings']);
+      return MapEntry(doc, avgRating);
+    }).where((entry) => entry.value > 0).toList();
+
+    docsWithRatings.sort((a, b) => b.value.compareTo(a.value));
+
+    return docsWithRatings.map((entry) => entry.key).take(7).toList();
+  }
+
+  List<MapEntry<DocumentSnapshot, double>> getNearestEvents(List<DocumentSnapshot> allEvents) {
     if (_currentPosition == null) return [];
 
-    var docsWithDistances = _filterUpcomingEvents(snapshot.docs).map((doc) {
+    var docsWithDistances = allEvents.map((doc) {
       final data = doc.data() as Map<String, dynamic>;
       final lat = data['latitude'];
       final lon = data['longitude'];
@@ -361,10 +363,8 @@ class _HomeState extends State<Home> {
 
     docsWithDistances.sort((a, b) => a.value.compareTo(b.value));
 
-    return docsWithDistances.take(2).toList();
-  });
-}
-
+    return docsWithDistances.take(10).toList();
+  }
 
   double _calculateAverageRating(Map<String, dynamic>? ratings) {
     if (ratings == null || ratings.isEmpty) return 0.0;
@@ -375,159 +375,112 @@ class _HomeState extends State<Home> {
     return total / ratings.length;
   }
 
-  Widget _buildFilteredList() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: DatabaseMethods().getEventDetails(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return SliverToBoxAdapter(child: _buildVerticalShimmer());
-        }
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const SliverToBoxAdapter(
-            child: Center(
-              heightFactor: 10,
-              child: Text("No events found."),
-            ),
-          );
-        }
+  Widget _buildFilteredList(List<DocumentSnapshot> allEvents) {
+      List<DocumentSnapshot> events = allEvents;
 
-        List<DocumentSnapshot> events = _filterUpcomingEvents(snapshot.data!.docs);
+      if (_selectedCategory != null) {
+        events = events.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return data['Category'] == _selectedCategory;
+        }).toList();
+      }
 
-        // Apply category filtering
-        if (_selectedCategory != null) {
-          events = events.where((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            return data['Category'] == _selectedCategory;
-          }).toList();
-        }
+      if (_searchQuery.isNotEmpty) {
+        events = events.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final name = data['Name'] as String? ?? '';
+          final detail = data['Detail'] as String? ?? '';
+          final query = _searchQuery.toLowerCase();
+          return name.toLowerCase().contains(query) ||
+              detail.toLowerCase().contains(query);
+        }).toList();
+      }
 
-        // Apply search query filtering
-        if (_searchQuery.isNotEmpty) {
-          events = events.where((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final name = data['Name'] as String? ?? '';
-            final detail = data['Detail'] as String? ?? '';
-            final query = _searchQuery.toLowerCase();
-            return name.toLowerCase().contains(query) ||
-                detail.toLowerCase().contains(query);
-          }).toList();
-        }
-
-        if (events.isEmpty) {
-          return const SliverToBoxAdapter(
-            child: Center(
-              heightFactor: 10,
-              child: Text("No events match your criteria."),
-            ),
-          );
-        }
-
-        return SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final event = events[index];
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(20.0, 0, 20.0, 16.0),
-                child: _buildEventCard(event,
-                    isBookmarked: _bookmarkedEventIds.contains(event.id)),
-              );
-            },
-            childCount: events.length,
+      if (events.isEmpty) {
+        return const SliverToBoxAdapter(
+          child: Center(
+            heightFactor: 10,
+            child: Text("No events match your criteria."),
           ),
         );
-      },
-    );
+      }
+
+      return SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final event = events[index];
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20.0, 0, 20.0, 16.0),
+              child: _buildEventCard(event,
+                  isBookmarked: _bookmarkedEventIds.contains(event.id)),
+            );
+          },
+          childCount: events.length,
+        ),
+      );
   }
 
   Widget _buildSectionHeader(String title) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.only(
-            left: 20.0, right: 20.0, top: 24.0, bottom: 16.0),
-        child: Text(title,
-            style: Theme.of(context)
-                .textTheme
-                .headlineSmall
-                ?.copyWith(fontWeight: FontWeight.bold)),
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(
+          left: 20.0, right: 20.0, top: 24.0, bottom: 16.0),
+      child: Text(title,
+          style: Theme.of(context)
+              .textTheme
+              .headlineSmall
+              ?.copyWith(fontWeight: FontWeight.bold)),
     );
   }
 
-  Widget _buildHorizontalEventsList(Stream<List<DocumentSnapshot>>? stream) {
-    if (stream == null) {
-      return const SliverToBoxAdapter(child: SizedBox.shrink());
+  Widget _buildHorizontalEventsList(List<DocumentSnapshot> events) {
+    if (events.isEmpty) {
+      return const SizedBox(
+          height: 100,
+          child: Center(child: Text("No events in this category yet.")));
     }
-    return SliverToBoxAdapter(
-      child: StreamBuilder<List<DocumentSnapshot>>(
-        stream: stream,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return _buildHorizontalShimmer();
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const SizedBox(
-                height: 100,
-                child: Center(child: Text("No events in this category yet.")));
-          }
 
-          return SizedBox(
-            height: 225,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20.0),
-              itemCount: snapshot.data!.length,
-              itemBuilder: (context, index) {
-                final event = snapshot.data![index];
-                return _buildEventCard(event,
-                    isBookmarked: _bookmarkedEventIds.contains(event.id),
-                    isFeatured: true);
-              },
-            ),
-          );
+    return SizedBox(
+      height: 225,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20.0),
+        itemCount: events.length,
+        itemBuilder: (context, index) {
+          final event = events[index];
+          return _buildEventCard(event,
+              isBookmarked: _bookmarkedEventIds.contains(event.id),
+              isFeatured: true);
         },
       ),
     );
   }
 
-  Widget _buildVerticalEventsList(Stream<List<MapEntry<DocumentSnapshot, double>>>? stream) {
-  if (stream == null) {
-    return const SliverToBoxAdapter(child: SizedBox.shrink());
-  }
-  return StreamBuilder<List<MapEntry<DocumentSnapshot, double>>>(
-    stream: stream,
-    builder: (context, snapshot) {
-      if (_currentPosition == null) {
-        return const SliverToBoxAdapter(
-            child: Center(
-                heightFactor: 5,
-                child: Text("Enable location to see nearby events.")));
-      }
-      if (snapshot.connectionState == ConnectionState.waiting) {
-        return SliverToBoxAdapter(child: _buildVerticalShimmer());
-      }
-      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-        return const SliverToBoxAdapter(
-            child: Center(heightFactor: 5, child: Text("No events nearby.")));
-      }
+  Widget _buildVerticalEventsList(List<MapEntry<DocumentSnapshot, double>> events) {
+    if (_currentPosition == null) {
+      return const Center(
+          heightFactor: 5,
+          child: Text("Enable location to see nearby events."));
+    }
+    if (events.isEmpty) {
+      return const Center(heightFactor: 5, child: Text("No events nearby."));
+    }
 
-      return SliverList(
-          delegate: SliverChildBuilderDelegate((context, index) {
-        final eventEntry = snapshot.data![index];
-        final event = eventEntry.key;
-        final distance = eventEntry.value; // in meters
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20.0, 0, 20.0, 16.0),
-          child: _buildEventCard(
-            event,
-            isBookmarked: _bookmarkedEventIds.contains(event.id),
-            isFeatured: false,
-            distance: distance,
-          ),
-        );
-      }, childCount: snapshot.data!.length));
-    },
-  );
-}
+    return Column(
+      children: events.map((eventEntry) {
+          final event = eventEntry.key;
+          final distance = eventEntry.value; // in meters
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20.0, 0, 20.0, 16.0),
+            child: _buildEventCard(
+              event,
+              isBookmarked: _bookmarkedEventIds.contains(event.id),
+              isFeatured: false,
+              distance: distance,
+            ),
+          );
+      }).toList(),
+    );
+  }
 
 
   Widget _buildCategorySelector() {
@@ -732,6 +685,18 @@ class _HomeState extends State<Home> {
       : card;
 }
 
+Widget _buildShimmerPlaceholder() {
+  return Column(
+    children: [
+      _buildSectionHeader(""), // Placeholder for header
+      _buildHorizontalShimmer(),
+      _buildSectionHeader(""), // Placeholder for header
+      _buildHorizontalShimmer(),
+      _buildSectionHeader(""), // Placeholder for header
+      _buildVerticalShimmer(),
+    ],
+  );
+}
 
   Widget _buildHorizontalShimmer() {
     return SizedBox(
