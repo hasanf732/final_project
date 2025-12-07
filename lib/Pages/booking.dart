@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/Pages/detail_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
@@ -29,6 +30,11 @@ class _BookingState extends State<Booking> with SingleTickerProviderStateMixin {
     super.dispose();
   }
 
+  Future<void> _handleRefresh() async {
+    // This will force the StreamBuilders to re-evaluate and fetch the latest data.
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -42,15 +48,12 @@ class _BookingState extends State<Booking> with SingleTickerProviderStateMixin {
           ],
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.only(bottom: 100.0),
-        child: TabBarView(
-          controller: _tabController,
-          children: const [
-            BookedEventsList(status: 'bookedEvents'),
-            BookedEventsList(status: 'attendedEvents'),
-          ],
-        ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          BookedEventsList(status: 'bookedEvents', onRefresh: _handleRefresh),
+          BookedEventsList(status: 'attendedEvents', showPastEvents: true, onRefresh: _handleRefresh),
+        ],
       ),
     );
   }
@@ -58,7 +61,15 @@ class _BookingState extends State<Booking> with SingleTickerProviderStateMixin {
 
 class BookedEventsList extends StatelessWidget {
   final String status;
-  const BookedEventsList({super.key, required this.status});
+  final bool showPastEvents;
+  final Future<void> Function() onRefresh;
+
+  const BookedEventsList({
+    super.key,
+    required this.status,
+    this.showPastEvents = false,
+    required this.onRefresh,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -75,134 +86,162 @@ class BookedEventsList extends StatelessWidget {
           return _buildBookingShimmer(theme);
         }
         if (!userSnapshot.hasData || !userSnapshot.data!.exists) {
-          return const Center(child: Text("No bookings found."));
+          return _buildRefreshableEmptyView("No bookings found.");
         }
 
         final userData = userSnapshot.data!.data() as Map<String, dynamic>;
         final eventIds = List<String>.from(userData[status] ?? []);
 
         if (eventIds.isEmpty) {
-          return const Center(child: Text("No events found in this category."));
+          return _buildRefreshableEmptyView("No events found in this category.");
         }
 
         return StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance.collection('News').where(FieldPath.documentId, whereIn: eventIds).snapshots(),
           builder: (context, eventSnapshot) {
-            if (eventSnapshot.connectionState == ConnectionState.waiting) {
+            if (eventSnapshot.connectionState == ConnectionState.waiting && !userSnapshot.hasData) {
               return _buildBookingShimmer(theme);
             }
             if (eventSnapshot.hasError) {
-              return Center(child: Text("Error: ${eventSnapshot.error}"));
+              return _buildRefreshableEmptyView("Error: ${eventSnapshot.error}");
             }
             if (!eventSnapshot.hasData || eventSnapshot.data!.docs.isEmpty) {
-              return const Center(child: Text("No event details found."));
+              return _buildRefreshableEmptyView("No event details found.");
             }
-            
+
             final now = DateTime.now();
-            final startOfToday = DateTime(now.year, now.month, now.day);
             var filteredDocs = eventSnapshot.data!.docs.where((doc) {
               final data = doc.data() as Map<String, dynamic>;
               final eventDate = (data['Date'] as Timestamp).toDate();
-              return !eventDate.isBefore(startOfToday);
+              if (showPastEvents) {
+                return eventDate.isBefore(now);
+              } else {
+                return !eventDate.isBefore(now);
+              }
             }).toList();
 
             if (filteredDocs.isEmpty) {
-              return Center(child: Text("No recent events in this category."));
+              return _buildRefreshableEmptyView("No events in this category.");
             }
 
-            return ListView.builder(
-              padding: const EdgeInsets.all(16.0),
-              itemCount: filteredDocs.length,
-              itemBuilder: (context, index) {
-                final event = filteredDocs[index];
-                final data = event.data() as Map<String, dynamic>;
-
-                return GestureDetector(
-                  onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => DetailPage(
-                            id: event.id,
-                            image: data['Image'] ?? '',
-                            name: data['Name'] ?? 'Untitled Event',
-                            startDate: data['Date'] as Timestamp,
-                            endDate: data['endDate'] as Timestamp?,
-                            location: data['Location'] ?? 'No location specified',
-                            detail: data['Detail'] ?? 'No details available',
-                          ),
-                        ),
-                      );
-                  },
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Row(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10.0),
-                            child: CachedNetworkImage(
-                              imageUrl: data['Image'] ?? '',
-                              height: 80,
-                              width: 80,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => Container(
-                                height: 80,
-                                width: 80,
-                                color: theme.colorScheme.surface.withAlpha(26),
-                              ),
-                              errorWidget: (context, url, error) => Container(
-                                height: 80,
-                                width: 80,
-                                color: theme.colorScheme.surface.withAlpha(26),
-                                child: Icon(Icons.broken_image, color: theme.colorScheme.onSurface.withAlpha(102)),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 15.0),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  data['Name'] ?? 'Untitled Event',
-                                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            return CustomScrollView(
+              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+              slivers: [
+                CupertinoSliverRefreshControl(
+                  onRefresh: onRefresh,
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 100.0),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final event = filteredDocs[index];
+                        final data = event.data() as Map<String, dynamic>;
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => DetailPage(
+                                  id: event.id,
+                                  image: data['Image'] ?? '',
+                                  name: data['Name'] ?? 'Untitled Event',
+                                  startDate: data['Date'] as Timestamp,
+                                  endDate: data['endDate'] as Timestamp?,
+                                  location: data['Location'] ?? 'No location specified',
+                                  detail: data['Detail'] ?? 'No details available',
                                 ),
-                                const SizedBox(height: 5.0),
-                                Row(
-                                  children: [
-                                    Icon(Icons.calendar_today, size: 16.0, color: theme.textTheme.bodySmall?.color),
-                                    const SizedBox(width: 5.0),
-                                    Text(DateFormat('yyyy-MM-dd').format((data['Date'] as Timestamp).toDate()), style: theme.textTheme.bodySmall),
-                                  ],
-                                ),
-                                const SizedBox(height: 3.0),
-                                Row(
-                                  children: [
-                                    Icon(Icons.location_on, size: 16.0, color: theme.textTheme.bodySmall?.color),
-                                    const SizedBox(width: 5.0),
-                                    Expanded(
-                                      child: Text(
-                                        data['Location'] ?? 'No location',
-                                        style: theme.textTheme.bodySmall,
-                                        overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          },
+                          child: Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Row(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(10.0),
+                                    child: CachedNetworkImage(
+                                      imageUrl: data['Image'] ?? '',
+                                      height: 80,
+                                      width: 80,
+                                      fit: BoxFit.cover,
+                                      placeholder: (context, url) => Container(
+                                        height: 80,
+                                        width: 80,
+                                        color: theme.colorScheme.surface.withAlpha(26),
+                                      ),
+                                      errorWidget: (context, url, error) => Container(
+                                        height: 80,
+                                        width: 80,
+                                        color: theme.colorScheme.surface.withAlpha(26),
+                                        child: Icon(Icons.broken_image, color: theme.colorScheme.onSurface.withAlpha(102)),
                                       ),
                                     ),
-                                  ],
-                                )
-                              ],
+                                  ),
+                                  const SizedBox(width: 15.0),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          data['Name'] ?? 'Untitled Event',
+                                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                                        ),
+                                        const SizedBox(height: 5.0),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.calendar_today, size: 16.0, color: theme.textTheme.bodySmall?.color),
+                                            const SizedBox(width: 5.0),
+                                            Text(DateFormat('yyyy-MM-dd').format((data['Date'] as Timestamp).toDate()), style: theme.textTheme.bodySmall),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 3.0),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.location_on, size: 16.0, color: theme.textTheme.bodySmall?.color),
+                                            const SizedBox(width: 5.0),
+                                            Expanded(
+                                              child: Text(
+                                                data['Location'] ?? 'No location',
+                                                style: theme.textTheme.bodySmall,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      ],
+                                    ),
+                                  )
+                                ],
+                              ),
                             ),
-                          )
-                        ],
-                      ),
+                          ),
+                        );
+                      },
+                      childCount: filteredDocs.length,
                     ),
                   ),
-                );
-              },
+                ),
+              ],
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildRefreshableEmptyView(String message) {
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        CupertinoSliverRefreshControl(
+          onRefresh: onRefresh,
+        ),
+        SliverFillRemaining(
+          child: Center(child: Text(message)),
+        )
+      ],
     );
   }
 
