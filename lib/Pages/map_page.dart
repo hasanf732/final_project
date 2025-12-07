@@ -1,6 +1,6 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:final_project/Pages/detail_page.dart';
 import 'package:flutter/material.dart';
@@ -675,7 +675,7 @@ class _MapPageState extends State<MapPage> {
   }
 
   static Future<BitmapDescriptor> _createCustomMarkerBitmap(String imageUrl, BuildContext context) async {
-    const double size = 150;
+    const int size = 150;
     final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(pictureRecorder);
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
@@ -683,33 +683,44 @@ class _MapPageState extends State<MapPage> {
     final Paint borderPaint = Paint()
       ..color = isDarkMode ? Colors.black : Colors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
+      ..strokeWidth = 10;
 
-    const double pinWidth = size * 0.8;
-    const double pinHeight = size;
+    // Draw the pin shape
+    final Path pinPath = Path();
+    pinPath.moveTo(size / 2, size.toDouble());
+    pinPath.quadraticBezierTo(size / 2, size * 0.7, size * 0.3, size * 0.6);
+    pinPath.quadraticBezierTo(size * 0.4, size * 0.75, size / 2, size.toDouble());
+    canvas.drawPath(pinPath, paint);
 
-    final Path path = Path()
-      ..moveTo(pinWidth / 2, pinHeight)
-      ..cubicTo(pinWidth / 2, pinHeight * 0.8, 0, pinHeight * 0.6, 0, pinHeight * 0.4)
-      ..arcTo(Rect.fromCircle(center: Offset(pinWidth / 2, pinHeight * 0.4), radius: pinWidth / 2), math.pi, math.pi, false)
-      ..cubicTo(pinWidth, pinHeight * 0.6, pinWidth / 2, pinHeight * 0.8, pinWidth / 2, pinHeight)
-      ..close();
+    // Draw the circular image
+    final double circleRadius = size / 3;
+    final Offset circleOffset = Offset(size / 2, circleRadius);
 
-    canvas.drawPath(path, paint);
-    canvas.drawPath(path, borderPaint);
+    // Fetch and decode the image
+    final Uint8List imageBytes = (await NetworkAssetBundle(Uri.parse(imageUrl)).load(imageUrl)).buffer.asUint8List();
+    final ui.Codec codec = await ui.instantiateImageCodec(imageBytes);
+    final ui.FrameInfo frameInfo = await codec.getNextFrame();
+    final ui.Image image = frameInfo.image;
 
-    final Completer<ui.Image> imageCompleter = Completer();
-    NetworkImage(imageUrl).resolve(const ImageConfiguration()).addListener(ImageStreamListener((info, _) => imageCompleter.complete(info.image)));
-    final ui.Image image = await imageCompleter.future;
+    // Clip the canvas to a circle
+    canvas.clipPath(Path()..addOval(Rect.fromCircle(center: circleOffset, radius: circleRadius)));
 
-    final Rect imageRect = Rect.fromCircle(center: Offset(pinWidth / 2, pinHeight * 0.4), radius: (pinWidth / 2) * 0.85);
-    canvas.clipPath(Path()..addOval(imageRect));
-    paintImage(canvas: canvas, rect: imageRect, image: image, fit: BoxFit.cover);
+    // Paint the image within the circle
+    paintImage(
+      canvas: canvas,
+      rect: Rect.fromCircle(center: circleOffset, radius: circleRadius),
+      image: image,
+      fit: BoxFit.cover,
+    );
 
-    final img = await pictureRecorder.endRecording().toImage(size.toInt(), size.toInt());
+    // Draw the border around the circle
+    canvas.drawCircle(circleOffset, circleRadius, borderPaint);
+
+    final img = await pictureRecorder.endRecording().toImage(size, size);
     final data = await img.toByteData(format: ui.ImageByteFormat.png);
     return BitmapDescriptor.fromBytes(data!.buffer.asUint8List());
   }
+
 
   static Future<BitmapDescriptor> _getClusterMarker(int count, BuildContext context) async {
     const double size = 120; // Slightly smaller for a cleaner look
