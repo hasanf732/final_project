@@ -1,4 +1,7 @@
+import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:final_project/Pages/detail_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,11 +17,23 @@ class FavoritesPage extends StatefulWidget {
 
 class _FavoritesPageState extends State<FavoritesPage> {
   Stream<List<DocumentSnapshot>>? _favoritesStream;
+  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
     _setupFavoritesStream();
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      if (results.any((result) => result != ConnectivityResult.none)) {
+        _setupFavoritesStream();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription.cancel();
+    super.dispose();
   }
 
   void _setupFavoritesStream() {
@@ -26,34 +41,35 @@ class _FavoritesPageState extends State<FavoritesPage> {
     if (user != null) {
       final userDocStream = FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots();
 
-      setState(() {
-        _favoritesStream = userDocStream.asyncMap((userDoc) async {
-          if (!userDoc.exists || userDoc.data()?['favoriteEvents'] == null) {
-            return [];
-          }
-          List<String> favoriteEventIds = List<String>.from(userDoc.data()!['favoriteEvents']);
-          if (favoriteEventIds.isEmpty) {
-            return [];
-          }
+      if (mounted) {
+        setState(() {
+          _favoritesStream = userDocStream.asyncMap((userDoc) async {
+            if (!userDoc.exists || userDoc.data()?['favoriteEvents'] == null) {
+              return [];
+            }
+            List<String> favoriteEventIds = List<String>.from(userDoc.data()!['favoriteEvents']);
+            if (favoriteEventIds.isEmpty) {
+              return [];
+            }
 
-          // Fetch each favorite event document
-          List<Future<DocumentSnapshot>> futureDocs = [];
-          for (String eventId in favoriteEventIds) {
-            futureDocs.add(DatabaseMethods().getEventById(eventId));
-          }
-          var events = await Future.wait(futureDocs);
-          
-          final now = DateTime.now();
-          final startOfToday = DateTime(now.year, now.month, now.day);
-          return events.where((event) {
-            if (!event.exists) return false;
-            final data = event.data() as Map<String, dynamic>;
-            final eventDate = (data['endDate'] ?? data['Date']) as Timestamp?;
-            if (eventDate == null) return false;
-            return !eventDate.toDate().isBefore(startOfToday);
-          }).toList();
+            List<Future<DocumentSnapshot>> futureDocs = [];
+            for (String eventId in favoriteEventIds) {
+              futureDocs.add(DatabaseMethods().getEventById(eventId));
+            }
+            var events = await Future.wait(futureDocs);
+
+            final now = DateTime.now();
+            final startOfToday = DateTime(now.year, now.month, now.day);
+            return events.where((event) {
+              if (!event.exists) return false;
+              final data = event.data() as Map<String, dynamic>;
+              final eventDate = (data['endDate'] ?? data['Date']) as Timestamp?;
+              if (eventDate == null) return false;
+              return !eventDate.toDate().isBefore(startOfToday);
+            }).toList();
+          });
         });
-      });
+      }
     }
   }
 
@@ -111,11 +127,22 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 child: ListTile(
                   leading: ClipRRect(
                     borderRadius: BorderRadius.circular(8.0),
-                    child: Image.network(
-                      eventData['Image'] ?? '',
+                    child: CachedNetworkImage(
+                      imageUrl: eventData['Image'] ?? '',
                       width: 50,
                       height: 50,
                       fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(
+                        width: 50,
+                        height: 50,
+                        color: Colors.grey[300],
+                      ),
+                      errorWidget: (context, url, error) => Image.asset(
+                        'Images/Eventposter1.png',
+                        width: 50,
+                        height: 50,
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   ),
                   title: Text(eventData['Name'] ?? 'Unnamed Event', style: const TextStyle(fontWeight: FontWeight.bold)),

@@ -7,9 +7,9 @@ import 'package:final_project/services/auth.dart';
 import 'package:final_project/services/database.dart';
 import 'package:final_project/services/theme_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -29,11 +29,23 @@ class _ProfileState extends State<Profile> {
   int _upcomingEventsCount = 0;
   int _attendedEventsCount = 0;
   bool _isAdmin = false;
+  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      if (results.any((result) => result != ConnectivityResult.none)) {
+        _handleRefresh();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription.cancel();
+    super.dispose();
   }
 
   Future<void> _handleRefresh() async {
@@ -138,36 +150,36 @@ class _ProfileState extends State<Profile> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-        slivers: [
-          SliverAppBar(
-            title: const Text("Profile", style: TextStyle(fontWeight: FontWeight.bold)),
-            centerTitle: true,
-            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-            elevation: 0,
-            pinned: true,
-          ),
-          CupertinoSliverRefreshControl(
-            onRefresh: _handleRefresh,
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 100.0),
-              child: Column(
-                children: [
-                  _buildHeader(),
-                  const SizedBox(height: 30),
-                  if (!_isAdmin) _buildStatsSection(),
-                  const SizedBox(height: 10),
-                  _buildMenu(),
-                  const SizedBox(height: 20),
-                  _buildLogoutButton(),
-                ],
+      body: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          slivers: [
+            SliverAppBar(
+              title: const Text("Profile", style: TextStyle(fontWeight: FontWeight.bold)),
+              centerTitle: true,
+              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+              elevation: 0,
+              pinned: true,
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 100.0),
+                child: Column(
+                  children: [
+                    _buildHeader(),
+                    const SizedBox(height: 30),
+                    if (!_isAdmin) _buildStatsSection(),
+                    const SizedBox(height: 10),
+                    _buildMenu(),
+                    const SizedBox(height: 20),
+                    _buildLogoutButton(),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -300,6 +312,15 @@ class _ProfileState extends State<Profile> {
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () => Share.share('Check out UniVent, an awesome app for university events!'),
           ),
+           if (_isAdmin) ...[
+            const Divider(indent: 16, endIndent: 16, height: 1),
+            ListTile(
+              leading: Icon(Icons.admin_panel_settings_outlined, color: theme.colorScheme.primary),
+              title: const Text("Admin Panel"),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminPanelPage())),
+            ),
+          ],
         ],
       ),
     );

@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:final_project/Pages/detail_page.dart';
 import 'package:final_project/Pages/favorites_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -27,6 +28,7 @@ class _HomeState extends State<Home> {
 
   StreamSubscription? _bookmarksSubscription;
   StreamSubscription? _userEventsSubscription;
+  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
@@ -53,6 +55,11 @@ class _HomeState extends State<Home> {
         });
       }
     });
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      if (results.any((result) => result != ConnectivityResult.none)) {
+        _handleRefresh();
+      }
+    });
   }
 
   @override
@@ -60,6 +67,7 @@ class _HomeState extends State<Home> {
     _searchController.dispose();
     _bookmarksSubscription?.cancel();
     _userEventsSubscription?.cancel();
+    _connectivitySubscription.cancel();
     super.dispose();
   }
 
@@ -201,71 +209,71 @@ class _HomeState extends State<Home> {
     final bool isFiltering = _selectedCategory != null;
 
     return Scaffold(
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-        slivers: [
-          SliverAppBar(
-            pinned: true,
-            floating: true,
-            elevation: 0,
-            backgroundColor: theme.scaffoldBackgroundColor,
-            title: Text(
-              "Hello, ${_userName.isNotEmpty ? _userName : 'User'}!",
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            actions: [
-              IconButton(
-                icon: Icon(Icons.bookmarks, color: theme.colorScheme.primary, size: 28),
-                onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => const FavoritesPage())),
+      body: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              floating: true,
+              elevation: 0,
+              backgroundColor: theme.scaffoldBackgroundColor,
+              title: Text(
+                "Hello, ${_userName.isNotEmpty ? _userName : 'User'}!",
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
-            ],
-          ),
-          CupertinoSliverRefreshControl(
-            onRefresh: _handleRefresh,
-          ),
-          SliverToBoxAdapter(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20.0, vertical: 10),
-                  child: _AnimatedSearchBar(controller: _searchController),
+              actions: [
+                IconButton(
+                  icon: Icon(Icons.bookmarks, color: theme.colorScheme.primary, size: 28),
+                  onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const FavoritesPage())),
                 ),
-                const SizedBox(height: 12),
-                _buildCategorySelector(),
               ],
             ),
-          ),
-          StreamBuilder<QuerySnapshot>(
-            stream: DatabaseMethods().getEventDetails(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return SliverList(delegate: SliverChildListDelegate([_buildShimmerPlaceholder()]));
-              }
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return const SliverToBoxAdapter(
-                  child: Center(
-                    heightFactor: 10,
-                    child: Text("No events available right now."),
+            SliverToBoxAdapter(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20.0, vertical: 10),
+                    child: _AnimatedSearchBar(controller: _searchController),
                   ),
-                );
-              }
+                  const SizedBox(height: 12),
+                  _buildCategorySelector(),
+                ],
+              ),
+            ),
+            StreamBuilder<QuerySnapshot>(
+              stream: DatabaseMethods().getEventDetails(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return SliverList(delegate: SliverChildListDelegate([_buildShimmerPlaceholder()]));
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const SliverToBoxAdapter(
+                    child: Center(
+                      heightFactor: 10,
+                      child: Text("No events available right now."),
+                    ),
+                  );
+                }
 
-              List<DocumentSnapshot> allEvents = _filterUpcomingEvents(snapshot.data!.docs);
+                List<DocumentSnapshot> allEvents = _filterUpcomingEvents(snapshot.data!.docs);
 
-              if (isSearching || isFiltering) {
-                return _buildFilteredList(allEvents);
-              }
-              
-              return _buildHomeContent(allEvents);
-            },
-          ),
-        ],
+                if (isSearching || isFiltering) {
+                  return _buildFilteredList(allEvents);
+                }
+                
+                return _buildHomeContent(allEvents);
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -576,15 +584,21 @@ class _HomeState extends State<Home> {
                       topLeft: Radius.circular(16),
                       topRight: Radius.circular(16),
                     ),
-                    child: Image.network(
-                      data['Image'] ?? 'https://via.placeholder.com/280x120',
+                    child: CachedNetworkImage(
+                      imageUrl: data['Image'] ?? '',
                       height: 120,
                       width: double.infinity,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Container(
+                      placeholder: (context, url) => Container(
                         height: 120,
                         color: Colors.grey[300],
                         child: const Icon(Icons.image_not_supported, color: Colors.grey),
+                      ),
+                      errorWidget: (context, url, error) => Image.asset(
+                        'Images/Eventposter1.png',
+                        height: 120,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
                       ),
                     ),
                   ),

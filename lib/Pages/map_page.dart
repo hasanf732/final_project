@@ -2,14 +2,15 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:final_project/Pages/detail_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:google_maps_cluster_manager_2/google_maps_cluster_manager_2.dart' as cluster_manager;
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:intl/intl.dart';
+import 'package:google_maps_cluster_manager_2/google_maps_cluster_manager_2.dart' as cluster_manager;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class Place with cluster_manager.ClusterItem {
@@ -62,6 +63,7 @@ class _MapPageState extends State<MapPage> {
   String _searchQuery = '';
   String? _selectedFilter;
   final List<String> _filters = ['All', 'Music', 'Art', 'Sport', 'Film', 'Volunteer', 'Cyber', 'Astro', 'Media'];
+  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
 
   @override
   void initState() {
@@ -80,12 +82,19 @@ class _MapPageState extends State<MapPage> {
     _searchFocusNode.addListener(() {
       setState(() {}); // Re-render to show/hide search results dropdown
     });
+
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      if (results.any((result) => result != ConnectivityResult.none)) {
+        _fetchEventLocations();
+      }
+    });
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _connectivitySubscription.cancel();
     super.dispose();
   }
 
@@ -114,7 +123,6 @@ class _MapPageState extends State<MapPage> {
       final data = result.data();
       final eventDate = (data['Date'] as Timestamp?)?.toDate();
 
-      // Only include events that are today or in the future
       if (eventDate != null && !eventDate.isBefore(startOfToday)) {
         final lat = data['latitude'];
         final lon = data['longitude'];
@@ -156,17 +164,16 @@ class _MapPageState extends State<MapPage> {
 
     if (mounted) {
       setState(() {
-      _searchResults = searchDropdownResults;
-    });
+        _searchResults = searchDropdownResults;
+      });
     }
 
     if (_selectedFilter != null && _selectedFilter != 'All') {
       placesToShowOnMap = placesToShowOnMap.where((p) => p.category == _selectedFilter).toList();
     }
-    
+
     _manager.setItems(placesToShowOnMap);
   }
-
 
   Future<void> _createMarkerBitmaps(List<Place> places) async {
     for (final place in places) {
@@ -268,10 +275,23 @@ class _MapPageState extends State<MapPage> {
       ),
       floatingActionButton: Visibility(
         visible: !_isSheetOpen && !showSearchResults,
-        child: FloatingActionButton(
-          onPressed: _animateToUser,
-          tooltip: 'My Location',
-          child: const Icon(Icons.my_location),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FloatingActionButton(
+              onPressed: _animateToUser,
+              tooltip: 'My Location',
+              heroTag: 'location_fab',
+              child: const Icon(Icons.my_location),
+            ),
+            const SizedBox(height: 16),
+            FloatingActionButton(
+              onPressed: _fetchEventLocations, // Re-fetches data and markers
+              tooltip: 'Refresh Events',
+              heroTag: 'refresh_fab',
+              child: const Icon(Icons.refresh),
+            ),
+          ],
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -478,10 +498,13 @@ class _MapPageState extends State<MapPage> {
                         child: CachedNetworkImage(
                           imageUrl: place.imageUrl,
                           fit: BoxFit.cover,
-                          placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-                          errorWidget: (context, url, error) => Container(
-                            color: Colors.grey.shade300,
-                            child: Icon(Icons.broken_image, color: Colors.grey.shade600),
+                          placeholder: (context, url) => Image.asset(
+                            'Images/Eventposter1.png', // Placeholder from assets
+                            fit: BoxFit.cover,
+                          ),
+                          errorWidget: (context, url, error) => Image.asset(
+                            'Images/Eventposter1.png', // Placeholder from assets
+                            fit: BoxFit.cover,
                           ),
                         ),
                       ),
@@ -629,8 +652,18 @@ class _MapPageState extends State<MapPage> {
                           width: 50,
                           height: 50,
                           fit: BoxFit.cover,
-                          placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-                          errorWidget: (context, url, error) => const Icon(Icons.error),
+                          placeholder: (context, url) => Image.asset(
+                            'Images/Eventposter1.png', // Placeholder from assets
+                            width: 50,
+                            height: 50,
+                            fit: BoxFit.cover,
+                          ),
+                          errorWidget: (context, url, error) => Image.asset(
+                            'Images/Eventposter1.png', // Placeholder from assets
+                            width: 50,
+                            height: 50,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                       title: Text(place.name),
@@ -697,7 +730,19 @@ class _MapPageState extends State<MapPage> {
     final Offset circleOffset = Offset(size / 2, circleRadius);
 
     // Fetch and decode the image
-    final Uint8List imageBytes = (await NetworkAssetBundle(Uri.parse(imageUrl)).load(imageUrl)).buffer.asUint8List();
+    Uint8List imageBytes;
+    try {
+      if (imageUrl.isNotEmpty) {
+        final file = await DefaultCacheManager().getSingleFile(imageUrl);
+        imageBytes = await file.readAsBytes();
+      } else {
+        throw Exception("Image URL is empty");
+      }
+    } catch (e) {
+      final ByteData data = await rootBundle.load('Images/Eventposter1.png');
+      imageBytes = data.buffer.asUint8List();
+    }
+
     final ui.Codec codec = await ui.instantiateImageCodec(imageBytes);
     final ui.FrameInfo frameInfo = await codec.getNextFrame();
     final ui.Image image = frameInfo.image;
@@ -721,7 +766,6 @@ class _MapPageState extends State<MapPage> {
     return BitmapDescriptor.fromBytes(data!.buffer.asUint8List());
   }
 
-
   static Future<BitmapDescriptor> _getClusterMarker(int count, BuildContext context) async {
     const double size = 120; // Slightly smaller for a cleaner look
     final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
@@ -732,7 +776,7 @@ class _MapPageState extends State<MapPage> {
     final Paint shadowPaint = Paint()
       ..color = isDarkMode ? Colors.white.withOpacity(0.2) : Colors.black.withOpacity(0.2)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
-    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2, shadowPaint);
+    canvas.drawCircle(Offset(size / 2, size / 2), size / 2, shadowPaint);
 
     final Paint gradientPaint = Paint()
       ..shader = RadialGradient(
@@ -742,14 +786,14 @@ class _MapPageState extends State<MapPage> {
         ],
         center: const Alignment(0.0, 0.0),
         radius: 0.8,
-      ).createShader(Rect.fromCircle(center: const Offset(size / 2, size / 2), radius: size / 2));
-    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2 - 4, gradientPaint);
+      ).createShader(Rect.fromCircle(center: Offset(size / 2, size / 2), radius: size / 2));
+    canvas.drawCircle(Offset(size / 2, size / 2), size / 2 - 4, gradientPaint);
 
     final Paint borderPaint = Paint()
       ..color = isDarkMode ? Colors.black.withOpacity(0.5) : Colors.white.withOpacity(0.8)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3;
-    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2 - 4, borderPaint);
+    canvas.drawCircle(Offset(size / 2, size / 2), size / 2 - 4, borderPaint);
 
     TextPainter textPainter = TextPainter(textDirection: ui.TextDirection.ltr);
     textPainter.text = TextSpan(
