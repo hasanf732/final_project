@@ -20,7 +20,7 @@ class _MainPageState extends State<MainPage> {
   bool _isLoading = true;
 
   late List<Widget> _pages;
-  late List<Widget> _navBarItems;
+  List<Widget> _navBarItems = [];
 
   @override
   void initState() {
@@ -28,18 +28,30 @@ class _MainPageState extends State<MainPage> {
     _checkUserRole();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // We setup navigation here because it depends on the theme (context).
+    if (!_isLoading) {
+      _setupNavigation();
+    }
+  }
+
   Future<void> _checkUserRole() async {
     bool isAdmin = await AuthMethods().isAdmin();
     if (mounted) {
       setState(() {
         _isAdmin = isAdmin;
-        _setupNavigation();
+        _setupNavigation(); // Initial setup
         _isLoading = false;
       });
     }
   }
 
   void _setupNavigation() {
+    final theme = Theme.of(context);
+    final iconColor = theme.brightness == Brightness.dark ? Colors.white70 : Colors.white;
+
     if (_isAdmin) {
       _pages = [
         const Home(),
@@ -47,11 +59,11 @@ class _MainPageState extends State<MainPage> {
         const AdminPanelPage(),
         const Profile(),
       ];
-      _navBarItems = const <Widget>[
-        Icon(Icons.home, size: 30),
-        Icon(Icons.map, size: 30),
-        Icon(Icons.admin_panel_settings, size: 30),
-        Icon(Icons.person, size: 30),
+      _navBarItems = <Widget>[
+        Icon(Icons.home, size: 30, color: iconColor),
+        Icon(Icons.map, size: 30, color: iconColor),
+        Icon(Icons.admin_panel_settings, size: 30, color: iconColor),
+        Icon(Icons.person, size: 30, color: iconColor),
       ];
     } else {
       _pages = [
@@ -60,11 +72,11 @@ class _MainPageState extends State<MainPage> {
         const Booking(),
         const Profile(),
       ];
-      _navBarItems = const <Widget>[
-        Icon(Icons.home, size: 30),
-        Icon(Icons.map, size: 30),
-        Icon(Icons.book_online, size: 30),
-        Icon(Icons.person, size: 30),
+      _navBarItems = <Widget>[
+        Icon(Icons.home, size: 30, color: iconColor),
+        Icon(Icons.map, size: 30, color: iconColor),
+        Icon(Icons.book_online, size: 30, color: iconColor),
+        Icon(Icons.person, size: 30, color: iconColor),
       ];
     }
   }
@@ -86,7 +98,7 @@ class _MainPageState extends State<MainPage> {
         index: _currentIndex,
         height: 75.0,
         items: _navBarItems,
-        color: theme.colorScheme.surface,
+        color: theme.colorScheme.primary, // Changed to primary color for a consistent look
         buttonBackgroundColor: theme.colorScheme.primary,
         backgroundColor: Colors.transparent,
         animationCurve: Curves.easeInOut,

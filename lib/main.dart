@@ -70,19 +70,19 @@ class MyApp extends StatelessWidget {
     final baseTheme = ThemeData(brightness: brightness);
     final colorScheme = isDark
         ? const ColorScheme.dark(
-            primary: Color(0xFF6792FF),
-            secondary: Color(0xFF6792FF),
+            primary: Color(0xFF3A5FCD), // Darker, less saturated blue
+            secondary: Color(0xFF3A5FCD),
             surface: Color(0xFF1E1E1E),
-            onPrimary: Colors.black,
-            onSecondary: Colors.black,
+            onPrimary: Colors.white, // Text on primary color
+            onSecondary: Colors.white, // Text on secondary color
             onSurface: Colors.white70)
         : const ColorScheme.light(
             primary: Color(0xFF00008B),
             secondary: Color(0xFF00008B),
-            surface: Colors.white,
+            surface: Color(0xFFF0F2F5), // Light, blue-ish gray
             onPrimary: Colors.white,
             onSecondary: Colors.white,
-            onSurface: Colors.black87);
+            onSurface: Color(0xFF1C1C1E)); // A darker color for text
 
     final textTheme = GoogleFonts.poppinsTextTheme(baseTheme.textTheme).apply(
       bodyColor: colorScheme.onSurface,
@@ -102,7 +102,7 @@ class MyApp extends StatelessWidget {
       ),
       cardTheme: CardThemeData(
         elevation: isDark ? 1 : 2,
-        color: colorScheme.surface,
+        color: isDark ? colorScheme.surface : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         shadowColor: isDark ? Colors.black.withAlpha(128) : Colors.black.withAlpha(26),
         margin: const EdgeInsets.symmetric(vertical: 8.0),

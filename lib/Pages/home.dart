@@ -204,6 +204,7 @@ class _HomeState extends State<Home> {
     final theme = Theme.of(context);
     final bool isSearching = _searchQuery.isNotEmpty;
     final bool isFiltering = _selectedCategory != null;
+    final bool isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       body: RefreshIndicator(
@@ -248,7 +249,7 @@ class _HomeState extends State<Home> {
                           borderSide: BorderSide.none,
                         ),
                         filled: true,
-                        fillColor: Theme.of(context).colorScheme.surface,
+                        fillColor: isDark ? Colors.grey[850] : Colors.white,
                       ),
                     ),
                   ),

@@ -234,7 +234,7 @@ class _ProfileState extends State<Profile> {
         children: [
            SwitchListTile(
             title: const Text('Dark Mode'),
-            secondary: Icon(Icons.dark_mode_outlined, color: theme.colorScheme.primary),
+            secondary: Icon(themeProvider.darkTheme ? Icons.dark_mode_outlined : Icons.light_mode_outlined, color: theme.colorScheme.primary),
             value: themeProvider.darkTheme,
             inactiveThumbColor: theme.colorScheme.onSurface.withAlpha(51),
             onChanged: (value) {
