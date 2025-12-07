@@ -330,7 +330,7 @@ class _CreateEventTabState extends State<CreateEventTab> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20.0),
+      padding: const EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 100.0),
       child: Form(
         key: _formKey,
         child: Column(
@@ -609,7 +609,7 @@ class EventStatisticsTab extends StatelessWidget {
                 }
 
                 return ListView.builder(
-                  padding: const EdgeInsets.all(8.0),
+                  padding: const EdgeInsets.fromLTRB(8.0, 8.0, 8.0, 100.0),
                   itemCount: filteredDocs.length,
                   itemBuilder: (context, index) {
                     var eventDoc = filteredDocs[index];
