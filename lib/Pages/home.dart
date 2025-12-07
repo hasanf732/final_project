@@ -4,6 +4,7 @@ import 'package:final_project/Pages/detail_page.dart';
 import 'package:final_project/Pages/favorites_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -200,71 +201,71 @@ class _HomeState extends State<Home> {
     final bool isFiltering = _selectedCategory != null;
 
     return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: _handleRefresh,
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-          slivers: [
-            SliverAppBar(
-              pinned: true,
-              floating: true,
-              elevation: 0,
-              backgroundColor: theme.scaffoldBackgroundColor.withAlpha(230),
-              title: Text(
-                "Hello, ${_userName.isNotEmpty ? _userName : 'User'}!",
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w600),
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          SliverAppBar(
+            pinned: true,
+            floating: true,
+            elevation: 0,
+            backgroundColor: theme.scaffoldBackgroundColor,
+            title: Text(
+              "Hello, ${_userName.isNotEmpty ? _userName : 'User'}!",
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            actions: [
+              IconButton(
+                icon: Icon(Icons.bookmarks, color: theme.colorScheme.primary, size: 28),
+                onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const FavoritesPage())),
               ),
-              actions: [
-                IconButton(
-                  icon: Icon(Icons.bookmarks, color: theme.colorScheme.primary, size: 28),
-                  onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => const FavoritesPage())),
+            ],
+          ),
+          CupertinoSliverRefreshControl(
+            onRefresh: _handleRefresh,
+          ),
+          SliverToBoxAdapter(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20.0, vertical: 10),
+                  child: _AnimatedSearchBar(controller: _searchController),
                 ),
+                const SizedBox(height: 12),
+                _buildCategorySelector(),
               ],
             ),
-            SliverToBoxAdapter(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20.0, vertical: 10),
-                    child: _AnimatedSearchBar(controller: _searchController),
+          ),
+          StreamBuilder<QuerySnapshot>(
+            stream: DatabaseMethods().getEventDetails(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return SliverList(delegate: SliverChildListDelegate([_buildShimmerPlaceholder()]));
+              }
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const SliverToBoxAdapter(
+                  child: Center(
+                    heightFactor: 10,
+                    child: Text("No events available right now."),
                   ),
-                  const SizedBox(height: 12),
-                  _buildCategorySelector(),
-                ],
-              ),
-            ),
-            StreamBuilder<QuerySnapshot>(
-              stream: DatabaseMethods().getEventDetails(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return SliverList(delegate: SliverChildListDelegate([_buildShimmerPlaceholder()]));
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const SliverToBoxAdapter(
-                    child: Center(
-                      heightFactor: 10,
-                      child: Text("No events available right now."),
-                    ),
-                  );
-                }
+                );
+              }
 
-                List<DocumentSnapshot> allEvents = _filterUpcomingEvents(snapshot.data!.docs);
+              List<DocumentSnapshot> allEvents = _filterUpcomingEvents(snapshot.data!.docs);
 
-                if (isSearching || isFiltering) {
-                  return _buildFilteredList(allEvents);
-                }
-                
-                return _buildHomeContent(allEvents);
-              },
-            ),
-          ],
-        ),
+              if (isSearching || isFiltering) {
+                return _buildFilteredList(allEvents);
+              }
+              
+              return _buildHomeContent(allEvents);
+            },
+          ),
+        ],
       ),
     );
   }
