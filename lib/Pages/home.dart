@@ -26,9 +26,11 @@ class _HomeState extends State<Home> {
   final Set<String> _bookedEventIds = {};
   final Set<String> _attendedEventIds = {};
   Position? _currentPosition;
+  Map<String, int> _registrationCounts = {};
 
   StreamSubscription? _bookmarksSubscription;
   StreamSubscription? _userEventsSubscription;
+  StreamSubscription? _registrationCountsSubscription;
   late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
 
   final TextEditingController _searchController = TextEditingController();
@@ -68,6 +70,7 @@ class _HomeState extends State<Home> {
     _searchController.dispose();
     _bookmarksSubscription?.cancel();
     _userEventsSubscription?.cancel();
+    _registrationCountsSubscription?.cancel();
     _connectivitySubscription.cancel();
     super.dispose();
   }
@@ -76,6 +79,7 @@ class _HomeState extends State<Home> {
     await _loadUserData();
     _listenToBookmarks();
     _listenToUserEvents();
+    _listenToRegistrationCounts();
     await _determinePosition();
   }
 
@@ -177,6 +181,17 @@ class _HomeState extends State<Home> {
         }
       });
     }
+  }
+
+  void _listenToRegistrationCounts() {
+    _registrationCountsSubscription =
+        DatabaseMethods().getEventRegistrationCounts().listen((counts) {
+      if (mounted) {
+        setState(() {
+          _registrationCounts = counts;
+        });
+      }
+    });
   }
 
   void _toggleBookmark(String eventId) {
@@ -308,18 +323,13 @@ class _HomeState extends State<Home> {
   }
 
   List<DocumentSnapshot> getHotEvents(List<DocumentSnapshot> allEvents) {
-    var docs = allEvents.where((doc) {
-      final data = doc.data() as Map<String, dynamic>;
-      return data.containsKey('ratings') && (data['ratings'] as Map).isNotEmpty;
-    }).toList();
-
-    docs.sort((a, b) {
-      var aRatings = (a.data() as Map<String, dynamic>)['ratings']?.length ?? 0;
-      var bRatings = (b.data() as Map<String, dynamic>)['ratings']?.length ?? 0;
-      return bRatings.compareTo(aRatings);
+    var sortedEvents = allEvents.toList();
+    sortedEvents.sort((a, b) {
+      final aCount = _registrationCounts[a.id] ?? 0;
+      final bCount = _registrationCounts[b.id] ?? 0;
+      return bCount.compareTo(aCount);
     });
-
-    return docs.take(7).toList();
+    return sortedEvents.take(10).toList();
   }
 
   List<DocumentSnapshot> getTopRatedEvents(List<DocumentSnapshot> allEvents) {
