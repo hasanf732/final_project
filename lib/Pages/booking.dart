@@ -5,6 +5,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:final_project/Pages/detail_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
@@ -48,22 +49,32 @@ class _BookingState extends State<Booking> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("My Bookings"),
-        bottom: TabBar(
+      body: NestedScrollView(
+        headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
+          return <Widget>[
+            SliverAppBar(
+              title: const Text("My Bookings", style: TextStyle(fontWeight: FontWeight.bold)),
+              centerTitle: true,
+              pinned: true,
+              floating: true,
+              forceElevated: innerBoxIsScrolled,
+              bottom: TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(text: 'Registered'),
+                  Tab(text: 'Attended'),
+                ],
+              ),
+            ),
+          ];
+        },
+        body: TabBarView(
           controller: _tabController,
-          tabs: const [
-            Tab(text: 'Registered'),
-            Tab(text: 'Attended'),
+          children: [
+            BookedEventsList(status: 'bookedEvents', onRefresh: _handleRefresh),
+            BookedEventsList(status: 'attendedEvents', showPastEvents: true, onRefresh: _handleRefresh),
           ],
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          BookedEventsList(status: 'bookedEvents', onRefresh: _handleRefresh),
-          BookedEventsList(status: 'attendedEvents', showPastEvents: true, onRefresh: _handleRefresh),
-        ],
       ),
     );
   }
@@ -96,14 +107,14 @@ class BookedEventsList extends StatelessWidget {
           return _buildBookingShimmer(theme);
         }
         if (!userSnapshot.hasData || !userSnapshot.data!.exists) {
-          return _buildRefreshableEmptyView("No bookings found.");
+          return _buildEmptyView("No bookings found.");
         }
 
         final userData = userSnapshot.data!.data() as Map<String, dynamic>;
         final eventIds = List<String>.from(userData[status] ?? []);
 
         if (eventIds.isEmpty) {
-          return _buildRefreshableEmptyView("No events found in this category.");
+          return _buildEmptyView("No events found in this category.");
         }
 
         return StreamBuilder<QuerySnapshot>(
@@ -113,10 +124,10 @@ class BookedEventsList extends StatelessWidget {
               return _buildBookingShimmer(theme);
             }
             if (eventSnapshot.hasError) {
-              return _buildRefreshableEmptyView("Error: ${eventSnapshot.error}");
+              return _buildEmptyView("Error: ${eventSnapshot.error}");
             }
             if (!eventSnapshot.hasData || eventSnapshot.data!.docs.isEmpty) {
-              return _buildRefreshableEmptyView("No event details found.");
+              return _buildEmptyView("No event details found.");
             }
 
             final now = DateTime.now();
@@ -131,118 +142,118 @@ class BookedEventsList extends StatelessWidget {
             }).toList();
 
             if (filteredDocs.isEmpty) {
-              return _buildRefreshableEmptyView("No events in this category.");
+              return _buildEmptyView("No events in this category.");
             }
 
-            return RefreshIndicator(
-              onRefresh: onRefresh,
-              child: CustomScrollView(
-                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                slivers: [
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 100.0),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final event = filteredDocs[index];
-                          final data = event.data() as Map<String, dynamic>;
-                          final imageUrl = data['Image'] as String? ?? '';
+            return CustomScrollView(
+              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+              slivers: [
+                CupertinoSliverRefreshControl(
+                  onRefresh: onRefresh,
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 100.0),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final event = filteredDocs[index];
+                        final data = event.data() as Map<String, dynamic>;
+                        final imageUrl = data['Image'] as String? ?? '';
 
-                          return GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => DetailPage(
-                                    id: event.id,
-                                    image: imageUrl,
-                                    name: data['Name'] ?? 'Untitled Event',
-                                    startDate: data['Date'] as Timestamp,
-                                    endDate: data['endDate'] as Timestamp?,
-                                    location: data['Location'] ?? 'No location specified',
-                                    detail: data['Detail'] ?? 'No details available',
-                                  ),
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => DetailPage(
+                                  id: event.id,
+                                  image: imageUrl,
+                                  name: data['Name'] ?? 'Untitled Event',
+                                  startDate: data['Date'] as Timestamp,
+                                  endDate: data['endDate'] as Timestamp?,
+                                  location: data['Location'] ?? 'No location specified',
+                                  detail: data['Detail'] ?? 'No details available',
                                 ),
-                              );
-                            },
-                            child: Card(
-                              child: Padding(
-                                padding: const EdgeInsets.all(12.0),
-                                child: Row(
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(10.0),
-                                      child: imageUrl.isNotEmpty
-                                          ? CachedNetworkImage(
-                                              imageUrl: imageUrl,
+                              ),
+                            );
+                          },
+                          child: Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Row(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(10.0),
+                                    child: imageUrl.isNotEmpty
+                                        ? CachedNetworkImage(
+                                            imageUrl: imageUrl,
+                                            height: 80,
+                                            width: 80,
+                                            fit: BoxFit.cover,
+                                            placeholder: (context, url) => Container(
                                               height: 80,
                                               width: 80,
-                                              fit: BoxFit.cover,
-                                              placeholder: (context, url) => Container(
-                                                height: 80,
-                                                width: 80,
-                                                color: theme.colorScheme.surface.withAlpha(26),
-                                              ),
-                                              errorWidget: (context, url, error) => Image.asset(
-                                                'Images/Eventposter1.png', // Placeholder from assets
-                                                height: 80,
-                                                width: 80,
-                                                fit: BoxFit.cover,
-                                              ),
-                                            )
-                                          : Image.asset(
+                                              color: theme.colorScheme.surface.withAlpha(26),
+                                            ),
+                                            errorWidget: (context, url, error) => Image.asset(
                                               'Images/Eventposter1.png', // Placeholder from assets
                                               height: 80,
                                               width: 80,
                                               fit: BoxFit.cover,
                                             ),
-                                    ),
-                                    const SizedBox(width: 15.0),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            data['Name'] ?? 'Untitled Event',
-                                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                                          ),
-                                          const SizedBox(height: 5.0),
-                                          Row(
-                                            children: [
-                                              Icon(Icons.calendar_today, size: 16.0, color: theme.textTheme.bodySmall?.color),
-                                              const SizedBox(width: 5.0),
-                                              Text(DateFormat('yyyy-MM-dd').format((data['Date'] as Timestamp).toDate()), style: theme.textTheme.bodySmall),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 3.0),
-                                          Row(
-                                            children: [
-                                              Icon(Icons.location_on, size: 16.0, color: theme.textTheme.bodySmall?.color),
-                                              const SizedBox(width: 5.0),
-                                              Expanded(
-                                                child: Text(
-                                                  data['Location'] ?? 'No location',
-                                                  style: theme.textTheme.bodySmall,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                            ],
                                           )
-                                        ],
-                                      ),
-                                    )
-                                  ],
-                                ),
+                                        : Image.asset(
+                                            'Images/Eventposter1.png', // Placeholder from assets
+                                            height: 80,
+                                            width: 80,
+                                            fit: BoxFit.cover,
+                                          ),
+                                  ),
+                                  const SizedBox(width: 15.0),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          data['Name'] ?? 'Untitled Event',
+                                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                                        ),
+                                        const SizedBox(height: 5.0),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.calendar_today, size: 16.0, color: theme.textTheme.bodySmall?.color),
+                                            const SizedBox(width: 5.0),
+                                            Text(DateFormat('yyyy-MM-dd').format((data['Date'] as Timestamp).toDate()), style: theme.textTheme.bodySmall),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 3.0),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.location_on, size: 16.0, color: theme.textTheme.bodySmall?.color),
+                                            const SizedBox(width: 5.0),
+                                            Expanded(
+                                              child: Text(
+                                                data['Location'] ?? 'No location',
+                                                style: theme.textTheme.bodySmall,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      ],
+                                    ),
+                                  )
+                                ],
                               ),
                             ),
-                          );
-                        },
-                        childCount: filteredDocs.length,
-                      ),
+                          ),
+                        );
+                      },
+                      childCount: filteredDocs.length,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             );
           },
         );
@@ -250,17 +261,14 @@ class BookedEventsList extends StatelessWidget {
     );
   }
 
-  Widget _buildRefreshableEmptyView(String message) {
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      child: CustomScrollView(
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-        slivers: [
-          SliverFillRemaining(
-            child: Center(child: Text(message)),
-          )
-        ],
-      ),
+  Widget _buildEmptyView(String message) {
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        SliverFillRemaining(
+          child: Center(child: Text(message)),
+        )
+      ],
     );
   }
 
