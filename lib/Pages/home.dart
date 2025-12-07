@@ -30,12 +30,6 @@ class _HomeState extends State<Home> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
 
-  final List<String> _hintTexts = [
-    "Search for Events",
-    "Search for Art",
-    "Search for Sport",
-    "Search for Music"
-  ];
   final List<Map<String, String>> _categories = [
     {'name': 'Music', 'image': 'Images/music1.png'},
     {'name': 'Media', 'image': 'Images/videography1.png'},
@@ -204,7 +198,6 @@ class _HomeState extends State<Home> {
     final theme = Theme.of(context);
     final bool isSearching = _searchQuery.isNotEmpty;
     final bool isFiltering = _selectedCategory != null;
-    final bool isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       body: RefreshIndicator(
@@ -239,19 +232,7 @@ class _HomeState extends State<Home> {
                   Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 20.0, vertical: 10),
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: _hintTexts.first,
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          borderSide: BorderSide.none,
-                        ),
-                        filled: true,
-                        fillColor: isDark ? Colors.grey[850] : Colors.white,
-                      ),
-                    ),
+                    child: _AnimatedSearchBar(controller: _searchController),
                   ),
                   const SizedBox(height: 12),
                   _buildCategorySelector(),
@@ -749,6 +730,106 @@ Widget _buildShimmerPlaceholder() {
                   ),
                 ),
               )),
+    );
+  }
+}
+
+
+class _AnimatedSearchBar extends StatefulWidget {
+  final TextEditingController controller;
+
+  const _AnimatedSearchBar({required this.controller});
+
+  @override
+  __AnimatedSearchBarState createState() => __AnimatedSearchBarState();
+}
+
+class __AnimatedSearchBarState extends State<_AnimatedSearchBar> {
+  Timer? _hintTextTimer;
+  int _hintTextIndex = 0;
+  bool _isSearching = false;
+
+  final List<String> _hintTexts = [
+    "Search for Events",
+    "Search for Art",
+    "Search for Sport",
+    "Search for Music"
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(() {
+      if (mounted) {
+        setState(() {
+          _isSearching = widget.controller.text.isNotEmpty;
+        });
+      }
+    });
+    _hintTextTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (mounted && !_isSearching) {
+        setState(() {
+          _hintTextIndex = (_hintTextIndex + 1) % _hintTexts.length;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _hintTextTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Stack(
+      alignment: Alignment.centerLeft,
+      children: [
+        TextField(
+          controller: widget.controller,
+          decoration: InputDecoration(
+            hintText: '',
+            prefixIcon: const Icon(Icons.search),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(20),
+              borderSide: BorderSide.none,
+            ),
+            filled: true,
+            fillColor: isDark ? Colors.grey[850] : Colors.white,
+          ),
+        ),
+        if (!_isSearching)
+          Padding(
+            padding: const EdgeInsets.only(left: 40.0),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 500),
+              transitionBuilder: (Widget child, Animation<double> animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0.0, 0.5),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                );
+              },
+              child: Text(
+                _hintTexts[_hintTextIndex],
+                key: ValueKey<int>(_hintTextIndex),
+                style: TextStyle(
+                  color: theme.hintColor,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
