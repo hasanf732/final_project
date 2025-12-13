@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:final_project/Pages/location_picker_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 
 class EditEventPage extends StatefulWidget {
@@ -29,6 +31,7 @@ class _EditEventPageState extends State<EditEventPage> {
   DateTime? _selectedRegistrationStartDate;
   DateTime? _selectedRegistrationEndDate;
   bool _unlimitedParticipants = false;
+  LatLng? _pickedLocation;
 
   bool _isLoading = true;
   bool _isAuthorized = false;
@@ -60,6 +63,9 @@ class _EditEventPageState extends State<EditEventPage> {
         _nameController.text = data['Name'] ?? '';
         _detailController.text = data['Detail'] ?? '';
         _locationController.text = data['Location'] ?? '';
+        if (data['latitude'] != null && data['longitude'] != null) {
+          _pickedLocation = LatLng(data['latitude'], data['longitude']);
+        }
         if (data['Date'] != null) {
           _selectedStartDate = (data['Date'] as Timestamp).toDate();
           _selectedStartTime = TimeOfDay.fromDateTime(_selectedStartDate!);
@@ -184,6 +190,20 @@ class _EditEventPageState extends State<EditEventPage> {
     }
   }
 
+  Future<void> _pickLocation() async {
+    final picked = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute(
+        builder: (context) => const LocationPickerPage(),
+      ),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _pickedLocation = picked;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -239,6 +259,12 @@ class _EditEventPageState extends State<EditEventPage> {
               TextFormField(
                 controller: _locationController,
                 decoration: const InputDecoration(labelText: 'Event Location'),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _pickLocation,
+                icon: const Icon(Icons.map),
+                label: const Text('Change Location'),
               ),
               const SizedBox(height: 16),
               Row(
@@ -356,6 +382,8 @@ class _EditEventPageState extends State<EditEventPage> {
                       'Name': _nameController.text,
                       'Detail': _detailController.text,
                       'Location': _locationController.text,
+                      'latitude': _pickedLocation?.latitude,
+                      'longitude': _pickedLocation?.longitude,
                       'Date': _selectedStartDate != null && _selectedStartTime != null
                           ? Timestamp.fromDate(DateTime(
                               _selectedStartDate!.year,

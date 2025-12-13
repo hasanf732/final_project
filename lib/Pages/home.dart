@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:final_project/Pages/detail_page.dart';
 import 'package:final_project/Pages/favorites_page.dart';
 import 'package:final_project/services/database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -23,19 +26,16 @@ class _HomeState extends State<Home> {
   final Set<String> _bookedEventIds = {};
   final Set<String> _attendedEventIds = {};
   Position? _currentPosition;
+  Map<String, int> _registrationCounts = {};
 
   StreamSubscription? _bookmarksSubscription;
   StreamSubscription? _userEventsSubscription;
+  StreamSubscription? _registrationCountsSubscription;
+  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
 
-  final List<String> _hintTexts = [
-    "Search for Events",
-    "Search for Art",
-    "Search for Sport",
-    "Search for Music"
-  ];
   final List<Map<String, String>> _categories = [
     {'name': 'Music', 'image': 'Images/music1.png'},
     {'name': 'Media', 'image': 'Images/videography1.png'},
@@ -58,6 +58,11 @@ class _HomeState extends State<Home> {
         });
       }
     });
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      if (results.any((result) => result != ConnectivityResult.none)) {
+        _handleRefresh();
+      }
+    });
   }
 
   @override
@@ -65,6 +70,8 @@ class _HomeState extends State<Home> {
     _searchController.dispose();
     _bookmarksSubscription?.cancel();
     _userEventsSubscription?.cancel();
+    _registrationCountsSubscription?.cancel();
+    _connectivitySubscription.cancel();
     super.dispose();
   }
 
@@ -72,6 +79,7 @@ class _HomeState extends State<Home> {
     await _loadUserData();
     _listenToBookmarks();
     _listenToUserEvents();
+    _listenToRegistrationCounts();
     await _determinePosition();
   }
 
@@ -175,6 +183,17 @@ class _HomeState extends State<Home> {
     }
   }
 
+  void _listenToRegistrationCounts() {
+    _registrationCountsSubscription =
+        DatabaseMethods().getEventRegistrationCounts().listen((counts) {
+      if (mounted) {
+        setState(() {
+          _registrationCounts = counts;
+        });
+      }
+    });
+  }
+
   void _toggleBookmark(String eventId) {
     setState(() {
       if (_bookmarkedEventIds.contains(eventId)) {
@@ -206,83 +225,71 @@ class _HomeState extends State<Home> {
     final bool isFiltering = _selectedCategory != null;
 
     return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: _handleRefresh,
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-          slivers: [
-            SliverAppBar(
-              pinned: true,
-              floating: true,
-              elevation: 0,
-              backgroundColor: theme.scaffoldBackgroundColor.withAlpha(230),
-              title: Text(
-                "Hello, ${_userName.isNotEmpty ? _userName : 'User'}!",
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w600),
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          SliverAppBar(
+            pinned: true,
+            floating: true,
+            elevation: 0,
+            backgroundColor: theme.scaffoldBackgroundColor,
+            title: Text(
+              "Hello, ${_userName.isNotEmpty ? _userName : 'User'}!",
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            actions: [
+              IconButton(
+                icon: Icon(Icons.bookmarks, color: theme.colorScheme.primary, size: 28),
+                onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const FavoritesPage())),
               ),
-              actions: [
-                IconButton(
-                  icon: Icon(Icons.bookmarks, color: theme.colorScheme.primary, size: 28),
-                  onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => const FavoritesPage())),
+            ],
+          ),
+          CupertinoSliverRefreshControl(
+            onRefresh: _handleRefresh,
+          ),
+          SliverToBoxAdapter(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20.0, vertical: 10),
+                  child: _AnimatedSearchBar(controller: _searchController),
                 ),
+                const SizedBox(height: 12),
+                _buildCategorySelector(),
               ],
             ),
-            SliverToBoxAdapter(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20.0, vertical: 10),
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: _hintTexts.first,
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          borderSide: BorderSide.none,
-                        ),
-                        filled: true,
-                        fillColor: Theme.of(context).colorScheme.surface,
-                      ),
-                    ),
+          ),
+          StreamBuilder<QuerySnapshot>(
+            stream: DatabaseMethods().getEventDetails(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return SliverList(delegate: SliverChildListDelegate([_buildShimmerPlaceholder()]));
+              }
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const SliverToBoxAdapter(
+                  child: Center(
+                    heightFactor: 10,
+                    child: Text("No events available right now."),
                   ),
-                  const SizedBox(height: 12),
-                  _buildCategorySelector(),
-                ],
-              ),
-            ),
-            StreamBuilder<QuerySnapshot>(
-              stream: DatabaseMethods().getEventDetails(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return SliverList(delegate: SliverChildListDelegate([_buildShimmerPlaceholder()]));
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const SliverToBoxAdapter(
-                    child: Center(
-                      heightFactor: 10,
-                      child: Text("No events available right now."),
-                    ),
-                  );
-                }
+                );
+              }
 
-                List<DocumentSnapshot> allEvents = _filterUpcomingEvents(snapshot.data!.docs);
+              List<DocumentSnapshot> allEvents = _filterUpcomingEvents(snapshot.data!.docs);
 
-                if (isSearching || isFiltering) {
-                  return _buildFilteredList(allEvents);
-                }
-                
-                return _buildHomeContent(allEvents);
-              },
-            ),
-          ],
-        ),
+              if (isSearching || isFiltering) {
+                return _buildFilteredList(allEvents);
+              }
+              
+              return _buildHomeContent(allEvents);
+            },
+          ),
+        ],
       ),
     );
   }
@@ -316,18 +323,13 @@ class _HomeState extends State<Home> {
   }
 
   List<DocumentSnapshot> getHotEvents(List<DocumentSnapshot> allEvents) {
-    var docs = allEvents.where((doc) {
-      final data = doc.data() as Map<String, dynamic>;
-      return data.containsKey('ratings') && (data['ratings'] as Map).isNotEmpty;
-    }).toList();
-
-    docs.sort((a, b) {
-      var aRatings = (a.data() as Map<String, dynamic>)['ratings']?.length ?? 0;
-      var bRatings = (b.data() as Map<String, dynamic>)['ratings']?.length ?? 0;
-      return bRatings.compareTo(aRatings);
+    var sortedEvents = allEvents.toList();
+    sortedEvents.sort((a, b) {
+      final aCount = _registrationCounts[a.id] ?? 0;
+      final bCount = _registrationCounts[b.id] ?? 0;
+      return bCount.compareTo(aCount);
     });
-
-    return docs.take(7).toList();
+    return sortedEvents.take(10).toList();
   }
 
   List<DocumentSnapshot> getTopRatedEvents(List<DocumentSnapshot> allEvents) {
@@ -593,15 +595,21 @@ class _HomeState extends State<Home> {
                       topLeft: Radius.circular(16),
                       topRight: Radius.circular(16),
                     ),
-                    child: Image.network(
-                      data['Image'] ?? 'https://via.placeholder.com/280x120',
+                    child: CachedNetworkImage(
+                      imageUrl: data['Image'] ?? '',
                       height: 120,
                       width: double.infinity,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Container(
+                      placeholder: (context, url) => Container(
                         height: 120,
                         color: Colors.grey[300],
                         child: const Icon(Icons.image_not_supported, color: Colors.grey),
+                      ),
+                      errorWidget: (context, url, error) => Image.asset(
+                        'Images/Eventposter1.png',
+                        height: 120,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
                       ),
                     ),
                   ),
@@ -748,6 +756,106 @@ Widget _buildShimmerPlaceholder() {
                   ),
                 ),
               )),
+    );
+  }
+}
+
+
+class _AnimatedSearchBar extends StatefulWidget {
+  final TextEditingController controller;
+
+  const _AnimatedSearchBar({required this.controller});
+
+  @override
+  __AnimatedSearchBarState createState() => __AnimatedSearchBarState();
+}
+
+class __AnimatedSearchBarState extends State<_AnimatedSearchBar> {
+  Timer? _hintTextTimer;
+  int _hintTextIndex = 0;
+  bool _isSearching = false;
+
+  final List<String> _hintTexts = [
+    "Search for Events",
+    "Search for Art",
+    "Search for Sport",
+    "Search for Music"
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(() {
+      if (mounted) {
+        setState(() {
+          _isSearching = widget.controller.text.isNotEmpty;
+        });
+      }
+    });
+    _hintTextTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (mounted && !_isSearching) {
+        setState(() {
+          _hintTextIndex = (_hintTextIndex + 1) % _hintTexts.length;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _hintTextTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Stack(
+      alignment: Alignment.centerLeft,
+      children: [
+        TextField(
+          controller: widget.controller,
+          decoration: InputDecoration(
+            hintText: '',
+            prefixIcon: const Icon(Icons.search),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(20),
+              borderSide: BorderSide.none,
+            ),
+            filled: true,
+            fillColor: isDark ? Colors.grey[850] : Colors.white,
+          ),
+        ),
+        if (!_isSearching)
+          Padding(
+            padding: const EdgeInsets.only(left: 40.0),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 500),
+              transitionBuilder: (Widget child, Animation<double> animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0.0, 0.5),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                );
+              },
+              child: Text(
+                _hintTexts[_hintTextIndex],
+                key: ValueKey<int>(_hintTextIndex),
+                style: TextStyle(
+                  color: theme.hintColor,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

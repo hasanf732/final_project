@@ -50,16 +50,23 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: ScaleTransition(
-          scale: _scaleAnimation,
-          child: Image.asset(
-            'Images/Logo.png',
-            fit: BoxFit.fill, 
-            width: double.infinity,
-            height: double.infinity,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            'Images/1back.png',
+            fit: BoxFit.cover,
           ),
-        ),
+          Center(
+            child: ScaleTransition(
+              scale: _scaleAnimation,
+              child: Image.asset(
+                'Images/1name.png',
+                width: 250, // Adjust the size as needed
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

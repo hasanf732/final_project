@@ -7,8 +7,10 @@ import 'package:final_project/services/auth.dart';
 import 'package:final_project/services/database.dart';
 import 'package:final_project/services/theme_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -28,14 +30,30 @@ class _ProfileState extends State<Profile> {
   int _upcomingEventsCount = 0;
   int _attendedEventsCount = 0;
   bool _isAdmin = false;
+  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      if (results.any((result) => result != ConnectivityResult.none)) {
+        _handleRefresh();
+      }
+    });
   }
 
-  void _loadUserData() async {
+  @override
+  void dispose() {
+    _connectivitySubscription.cancel();
+    super.dispose();
+  }
+
+  Future<void> _handleRefresh() async {
+    await _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       if (mounted) {
@@ -50,7 +68,6 @@ class _ProfileState extends State<Profile> {
         if (userDoc.exists && userDoc.data() != null && mounted) {
           Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
           
-          // Check for admin role
           final bool isAdmin = (userData['role'] == 'admin') || (userData['isAdmin'] == true);
 
           if (!isAdmin) {
@@ -70,17 +87,21 @@ class _ProfileState extends State<Profile> {
                 }
               }
             }
-             setState(() {
-              _upcomingEventsCount = upcoming;
-              _attendedEventsCount = attended;
-            });
+             if (mounted) {
+              setState(() {
+                _upcomingEventsCount = upcoming;
+                _attendedEventsCount = attended;
+              });
+            }
           }
 
-          setState(() {
-            _userName = userData['Name'] ?? 'No Name';
-            _userMajor = userData['Major'] ?? "Not Set";
-            _isAdmin = isAdmin;
-          });
+          if (mounted) {
+            setState(() {
+              _userName = userData['Name'] ?? 'No Name';
+              _userMajor = userData['Major'] ?? "Not Set";
+              _isAdmin = isAdmin;
+            });
+          }
         }
       } catch (e) {
         if (mounted) {
@@ -130,25 +151,36 @@ class _ProfileState extends State<Profile> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Profile", style: TextStyle(fontWeight: FontWeight.bold)),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 100.0),
-        child: Column(
-          children: [
-            _buildHeader(),
-            const SizedBox(height: 30),
-            if (!_isAdmin) _buildStatsSection(),
-            const SizedBox(height: 10),
-            _buildMenu(),
-            const SizedBox(height: 20),
-            _buildLogoutButton(),
-          ],
-        ),
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          SliverAppBar(
+            title: const Text("Profile", style: TextStyle(fontWeight: FontWeight.bold)),
+            centerTitle: true,
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+            elevation: 0,
+            pinned: true,
+          ),
+          CupertinoSliverRefreshControl(
+            onRefresh: _handleRefresh,
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 100.0),
+              child: Column(
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 30),
+                  if (!_isAdmin) _buildStatsSection(),
+                  const SizedBox(height: 10),
+                  _buildMenu(),
+                  const SizedBox(height: 20),
+                  _buildLogoutButton(),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -176,7 +208,7 @@ class _ProfileState extends State<Profile> {
                   width: 40,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Theme.of(context).cardColor, // Use theme color
+                    color: Theme.of(context).cardColor,
                     border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 2)
                   ),
                   child: Icon(Icons.edit, color: Theme.of(context).colorScheme.primary, size: 20),
@@ -234,7 +266,7 @@ class _ProfileState extends State<Profile> {
         children: [
            SwitchListTile(
             title: const Text('Dark Mode'),
-            secondary: Icon(Icons.dark_mode_outlined, color: theme.colorScheme.primary),
+            secondary: Icon(themeProvider.darkTheme ? Icons.dark_mode_outlined : Icons.light_mode_outlined, color: theme.colorScheme.primary),
             value: themeProvider.darkTheme,
             inactiveThumbColor: theme.colorScheme.onSurface.withAlpha(51),
             onChanged: (value) {
