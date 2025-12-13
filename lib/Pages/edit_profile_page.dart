@@ -18,6 +18,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _majorController = TextEditingController();
   Uint8List? _imageBytes;
   bool _isLoading = false;
+  String? _currentPhotoUrl;
 
   @override
   void initState() {
@@ -33,6 +34,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         final data = userDoc.data() as Map<String, dynamic>;
         _nameController.text = data['Name'] ?? '';
         _majorController.text = data['Major'] ?? '';
+        _currentPhotoUrl = data['Image'];
         setState(() {});
       }
     }
@@ -64,8 +66,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 onTap: _pickImage,
                 child: CircleAvatar(
                   radius: 50,
-                  backgroundImage: _imageBytes != null ? MemoryImage(_imageBytes!) : null,
-                  child: _imageBytes == null ? const Icon(Icons.camera_alt, size: 40) : null,
+                  backgroundImage: _imageBytes != null 
+                      ? MemoryImage(_imageBytes!) 
+                      : (_currentPhotoUrl != null ? NetworkImage(_currentPhotoUrl!) as ImageProvider : null),
+                  child: (_imageBytes == null && _currentPhotoUrl == null) ? const Icon(Icons.camera_alt, size: 40) : null,
                 ),
               ),
               const SizedBox(height: 16),
@@ -92,9 +96,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     });
                     final user = FirebaseAuth.instance.currentUser;
                     if (user != null) {
+                      String? photoUrl;
+                      if (_imageBytes != null) {
+                         photoUrl = await DatabaseMethods().uploadProfileImage(_imageBytes!, user.uid);
+                         await user.updatePhotoURL(photoUrl);
+                      }
+
                       final userData = {
                         'Name': _nameController.text,
                         'Major': _majorController.text,
+                        if (photoUrl != null) 'Image': photoUrl,
                       };
                       await DatabaseMethods().updateUser(user.uid, userData);
                     }

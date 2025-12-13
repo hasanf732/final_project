@@ -56,6 +56,7 @@ class _ProfileState extends State<Profile> {
   Future<void> _loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
+      await user.reload(); // Reload user to get latest auth info
       if (mounted) {
         setState(() {
           _userEmail = user.email ?? "";
@@ -100,6 +101,9 @@ class _ProfileState extends State<Profile> {
               _userName = userData['Name'] ?? 'No Name';
               _userMajor = userData['Major'] ?? "Not Set";
               _isAdmin = isAdmin;
+              if (userData.containsKey('Image')) {
+                  _userPhotoUrl = userData['Image'];
+              }
             });
           }
         }
@@ -231,19 +235,26 @@ class _ProfileState extends State<Profile> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
-        _buildStatColumn(_attendedEventsCount.toString(), "Attended"),
-        _buildStatColumn(_upcomingEventsCount.toString(), "Upcoming"),
+        _buildStatColumn(_attendedEventsCount.toString(), "Attended", () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const Booking(initialIndex: 1)));
+        }),
+        _buildStatColumn(_upcomingEventsCount.toString(), "Upcoming", () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const Booking(initialIndex: 0)));
+        }),
       ],
     );
   }
 
-  Widget _buildStatColumn(String value, String label) {
-    return Column(
-      children: [
-        Text(value, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
-      ],
+  Widget _buildStatColumn(String value, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Text(value, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
+        ],
+      ),
     );
   }
 

@@ -191,6 +191,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
                                   endDate: endDate,
                                   location: eventData['Location'] ?? 'No location specified',
                                   detail: eventData['Detail'] ?? 'No details available',
+                                  latitude: eventData['latitude'] as double?,
+                                  longitude: eventData['longitude'] as double?,
                                 ),
                               ),
                             );

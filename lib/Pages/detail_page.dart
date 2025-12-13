@@ -1,19 +1,27 @@
 import 'dart:async';
+import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/Pages/EditEventPage.dart';
 import 'package:final_project/Pages/qr_display_page.dart';
 import 'package:final_project/services/database.dart';
+import 'package:final_project/services/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class DetailPage extends StatefulWidget {
   final String image, name, location, detail, id;
   final Timestamp? startDate, endDate;
+  final double? latitude;
+  final double? longitude;
 
   const DetailPage(
       {super.key,
@@ -23,7 +31,9 @@ class DetailPage extends StatefulWidget {
       required this.detail,
       required this.id,
       this.startDate,
-      this.endDate});
+      this.endDate,
+      this.latitude,
+      this.longitude});
 
   @override
   State<DetailPage> createState() => _DetailPageState();
@@ -206,6 +216,38 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     }
   }
 
+  Future<void> _shareEvent() async {
+    final dateStr = _formatDate(widget.startDate);
+    await Share.share(
+      'Check out this event on UniVent: ${widget.name}\n📅 $dateStr\n📍 ${widget.location}\n\nJoin me there!',
+      subject: 'Invite to ${widget.name}',
+    );
+  }
+
+  Future<void> _addToCalendar() async {
+    if (widget.startDate == null) return;
+    
+    final Event event = Event(
+      title: widget.name,
+      description: widget.detail,
+      location: widget.location,
+      startDate: widget.startDate!.toDate(),
+      endDate: widget.endDate?.toDate() ?? widget.startDate!.toDate().add(const Duration(hours: 2)),
+      allDay: false,
+    );
+
+    await Add2Calendar.addEvent2Cal(event);
+  }
+
+  Future<void> _openMap() async {
+    if (widget.latitude != null && widget.longitude != null) {
+      final Uri googleMapsUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=${widget.latitude},${widget.longitude}');
+      if (await canLaunchUrl(googleMapsUrl)) {
+        await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -219,6 +261,8 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _buildActionButtons(theme),
+                  const SizedBox(height: 20.0),
                   if (_isAttended)
                     _buildStatusBadge('Attended', theme.colorScheme.secondary)
                   else if (_isRegistered)
@@ -226,6 +270,10 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                   const SizedBox(height: 20.0),
                   _buildEventInfoCard(theme),
                   const SizedBox(height: 20.0),
+                  if (widget.latitude != null && widget.longitude != null) ...[
+                    _buildLocationMap(theme),
+                    const SizedBox(height: 20.0),
+                  ],
                    if (_eventData != null) _buildRegistrationCard(theme),
                   const SizedBox(height: 30.0),
                   Text("About Event", style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
@@ -245,6 +293,72 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildActionButtons(ThemeData theme) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _buildActionButton(
+          icon: _isFavorite ? Icons.bookmark : Icons.bookmark_border,
+          color: _isFavorite ? theme.colorScheme.primary : theme.colorScheme.onSurface,
+          label: 'Bookmark',
+          onTap: _toggleFavorite,
+          isAnimated: true,
+        ),
+        _buildActionButton(
+          icon: Icons.calendar_today,
+          color: theme.colorScheme.onSurface,
+          label: 'Calendar',
+          onTap: _addToCalendar,
+        ),
+        _buildActionButton(
+          icon: Icons.share,
+          color: theme.colorScheme.onSurface,
+          label: 'Share',
+          onTap: _shareEvent,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButton({required IconData icon, required Color color, required String label, required VoidCallback onTap, bool isAnimated = false}) {
+    Widget iconWidget = Icon(icon, color: color, size: 28);
+    if (isAnimated) {
+      iconWidget = ScaleTransition(
+        scale: _scaleAnimation,
+        child: iconWidget,
+      );
+    }
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(13),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: iconWidget,
+            ),
+            const SizedBox(height: 8),
+            Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEventInfoCard(ThemeData theme) {
     return Card(
       elevation: 2,
@@ -254,7 +368,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-             Text("Date & Time", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+             Text("Details", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
              const Divider(height: 20),
             _buildInfoRow(theme, Icons.calendar_today_outlined, "Start Date", _formatDate(widget.startDate)),
             _buildInfoRow(theme, Icons.access_time_outlined, "Start Time", _formatTime(widget.startDate)),
@@ -263,9 +377,78 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
               _buildInfoRow(theme, Icons.calendar_today, "End Date", _formatDate(widget.endDate!)),
               _buildInfoRow(theme, Icons.access_time, "End Time", _formatTime(widget.endDate!)),
             ],
+            const SizedBox(height: 10),
+            _buildInfoRow(theme, Icons.location_on_outlined, "Location", widget.location),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildLocationMap(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    final mapStylePath = isDark ? 'Images/map_style_dark.json' : 'Images/map_style.json';
+
+    return FutureBuilder<String>(
+      future: rootBundle.loadString(mapStylePath),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Location", style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.0)),
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox(
+                height: 200,
+                child: Stack(
+                  children: [
+                    GoogleMap(
+                      style: snapshot.data,
+                      initialCameraPosition: CameraPosition(
+                        target: LatLng(widget.latitude!, widget.longitude!),
+                        zoom: 15,
+                      ),
+                      markers: {
+                        Marker(
+                          markerId: const MarkerId('event_location'),
+                          position: LatLng(widget.latitude!, widget.longitude!),
+                        ),
+                      },
+                      zoomControlsEnabled: false,
+                      scrollGesturesEnabled: false,
+                      rotateGesturesEnabled: false,
+                      tiltGesturesEnabled: false,
+                      myLocationButtonEnabled: false,
+                      onTap: (_) => _openMap(),
+                    ),
+                    Positioned(
+                      bottom: 10,
+                      right: 10,
+                      child: ElevatedButton.icon(
+                        onPressed: _openMap,
+                        icon: const Icon(Icons.navigation_outlined, size: 18),
+                        label: const Text("Navigate"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white, // White theme for button
+                          foregroundColor: Colors.black, // Black text
+                          elevation: 4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -405,22 +588,6 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
               ),
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.only(right: 16.0, top: 8, bottom: 8),
-          child: CircleAvatar(
-             backgroundColor: theme.colorScheme.surface.withOpacity(0.8),
-            child: ScaleTransition(
-              scale: _scaleAnimation,
-              child: IconButton(
-                icon: Icon(
-                  _isFavorite ? Icons.bookmark : Icons.bookmark_border,
-                  color: _isFavorite ? theme.colorScheme.primary : theme.colorScheme.onSurface,
-                ),
-                onPressed: _toggleFavorite,
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -708,71 +875,132 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
           );
         }
         
-        if (_isRegistered) {
-          return ElevatedButton(
-            onPressed: () {
-              final user = FirebaseAuth.instance.currentUser;
-              if (user != null) {
-                String qrData = "${user.uid}_${widget.id}";
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => QrDisplayPage(
-                      qrData: qrData,
-                      eventName: widget.name,
-                      eventDate: _formatDate(widget.startDate),
-                      eventLocation: widget.location,
+        return StreamBuilder<bool>(
+          stream: DatabaseMethods().isUserOnWaitlist(widget.id),
+          builder: (context, waitlistSnapshot) {
+            final isOnWaitlist = waitlistSnapshot.data ?? false;
+
+            if (_isRegistered) {
+              return Column(
+                children: [
+                  ElevatedButton(
+                    onPressed: () {
+                      final user = FirebaseAuth.instance.currentUser;
+                      if (user != null) {
+                        String qrData = "${user.uid}_${widget.id}";
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => QrDisplayPage(
+                              qrData: qrData,
+                              eventName: widget.name,
+                              eventDate: _formatDate(widget.startDate),
+                              eventLocation: widget.location,
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 50),
+                      backgroundColor: theme.colorScheme.secondary,
+                      foregroundColor: theme.colorScheme.onSecondary,
                     ),
+                    child: const Text("Show QR Code"),
                   ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () async {
+                      bool? confirm = await showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Cancel Registration?'),
+                          content: const Text('Are you sure you want to cancel your registration? This will free up a spot for others.'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
+                            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Yes')),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        await DatabaseMethods().cancelRegistration(widget.id);
+                        await NotificationService().unsubscribeFromTopic('event_${widget.id}');
+                        await NotificationService().cancelEventReminder(widget.id); // Cancel reminder
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registration cancelled.')));
+                      }
+                    },
+                    child: const Text("Cancel Registration", style: TextStyle(color: Colors.red)),
+                  )
+                ],
+              );
+            }
+
+            if (isFull) {
+              if (isOnWaitlist) {
+                 return ElevatedButton(
+                  onPressed: () async {
+                    await DatabaseMethods().leaveWaitlist(widget.id);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Left waitlist.')));
+                  },
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 50),
+                    backgroundColor: Colors.grey,
+                  ),
+                  child: const Text("Leave Waitlist"),
+                );
+              } else {
+                return ElevatedButton(
+                  onPressed: () async {
+                    await DatabaseMethods().joinWaitlist(widget.id);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Joined waitlist! You will be notified if a spot opens up.')));
+                  },
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 50),
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text("Join Waitlist"),
                 );
               }
-            },
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 50),
-              backgroundColor: theme.colorScheme.secondary,
-              foregroundColor: theme.colorScheme.onSecondary,
-            ),
-            child: const Text("Show QR Code"),
-          );
-        }
+            }
 
-        if (isFull) {
-          return const ElevatedButton(
-            onPressed: null,
-            style: ButtonStyle(minimumSize: MaterialStatePropertyAll(Size(double.infinity, 50))),
-            child: Text("Registration Full"),
-          );
-        }
+            if (!registrationHasOpened) {
+              return const ElevatedButton(
+                onPressed: null,
+                style: ButtonStyle(minimumSize: MaterialStatePropertyAll(Size(double.infinity, 50))),
+                child: Text("Registration Has Not Opened"),
+              );
+            }
 
-        if (!registrationHasOpened) {
-          return const ElevatedButton(
-            onPressed: null,
-            style: ButtonStyle(minimumSize: MaterialStatePropertyAll(Size(double.infinity, 50))),
-            child: Text("Registration Has Not Opened"),
-          );
-        }
+            if (registrationHasClosed) {
+              return const ElevatedButton(
+                onPressed: null,
+                style: ButtonStyle(minimumSize: MaterialStatePropertyAll(Size(double.infinity, 50))),
+                child: Text("Registration Closed"),
+              );
+            }
 
-        if (registrationHasClosed) {
-          return const ElevatedButton(
-            onPressed: null,
-            style: ButtonStyle(minimumSize: MaterialStatePropertyAll(Size(double.infinity, 50))),
-            child: Text("Registration Closed"),
-          );
-        }
-
-        return ElevatedButton(
-          onPressed: () async {
-            await DatabaseMethods().registerForEvent(widget.id);
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                backgroundColor: Colors.green,
-                content: Text("Successfully registered for the event!")));
-          },
-          style: ElevatedButton.styleFrom(
-            minimumSize: const Size(double.infinity, 50),
-            backgroundColor: theme.colorScheme.primary,
-            foregroundColor: theme.colorScheme.onPrimary,
-          ),
-          child: const Text("Register Now"),
+            return ElevatedButton(
+              onPressed: () async {
+                await DatabaseMethods().registerForEvent(widget.id);
+                await NotificationService().subscribeToTopic('event_${widget.id}');
+                // Schedule local reminder if date is available
+                if (widget.startDate != null) {
+                   await NotificationService().scheduleEventReminder(widget.id, widget.name, widget.startDate!.toDate());
+                }
+                
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    backgroundColor: Colors.green,
+                    content: Text("Successfully registered for the event!")));
+              },
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 50),
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: theme.colorScheme.onPrimary,
+              ),
+              child: const Text("Register Now"),
+            );
+          }
         );
       },
     );

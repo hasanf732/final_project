@@ -38,6 +38,14 @@ class DatabaseMethods {
     await _firestore.collection("users").doc(id).set(userinfoMap, SetOptions(merge: true));
   }
 
+  Future<String> uploadProfileImage(Uint8List imageBytes, String uid) async {
+    String fileName = 'profile_images/$uid.jpg';
+    Reference storageRef = FirebaseStorage.instance.ref().child(fileName);
+    UploadTask uploadTask = storageRef.putData(imageBytes);
+    TaskSnapshot taskSnapshot = await uploadTask;
+    return await taskSnapshot.ref.getDownloadURL();
+  }
+
   Future<void> addNews(
     Uint8List imageBytes, String name, String detail, String location, double latitude, double longitude, DateTime dateTime, String category, {DateTime? endDate, DateTime? registrationStartDate, DateTime? registrationEndDate, int? participantLimit}) async {
     final user = _auth.currentUser;
@@ -137,6 +145,43 @@ class DatabaseMethods {
     final userRef = _firestore.collection('users').doc(user.uid);
     await userRef.update({
       'bookedEvents': FieldValue.arrayUnion([eventId])
+    });
+  }
+
+  Future<void> cancelRegistration(String eventId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    final userRef = _firestore.collection('users').doc(user.uid);
+    await userRef.update({
+      'bookedEvents': FieldValue.arrayRemove([eventId])
+    });
+  }
+
+  Future<void> joinWaitlist(String eventId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await _firestore.collection('News').doc(eventId).set({
+      'waitlist': FieldValue.arrayUnion([user.uid])
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> leaveWaitlist(String eventId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await _firestore.collection('News').doc(eventId).update({
+      'waitlist': FieldValue.arrayRemove([user.uid])
+    });
+  }
+
+  Stream<bool> isUserOnWaitlist(String eventId) {
+    final user = _auth.currentUser;
+    if (user == null) return Stream.value(false);
+    return _firestore.collection('News').doc(eventId).snapshots().map((doc) {
+      if (!doc.exists) return false;
+      final data = doc.data();
+      if (data == null || !data.containsKey('waitlist')) return false;
+      List<dynamic> waitlist = data['waitlist'];
+      return waitlist.contains(user.uid);
     });
   }
 

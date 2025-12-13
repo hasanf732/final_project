@@ -11,7 +11,8 @@ import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
 
 class Booking extends StatefulWidget {
-  const Booking({super.key});
+  final int initialIndex;
+  const Booking({super.key, this.initialIndex = 0});
 
   @override
   State<Booking> createState() => _BookingState();
@@ -24,7 +25,7 @@ class _BookingState extends State<Booking> with SingleTickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialIndex);
 
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
       if (results.any((result) => result != ConnectivityResult.none)) {
@@ -173,6 +174,8 @@ class BookedEventsList extends StatelessWidget {
                                   endDate: data['endDate'] as Timestamp?,
                                   location: data['Location'] ?? 'No location specified',
                                   detail: data['Detail'] ?? 'No details available',
+                                  latitude: data['latitude'] as double?,
+                                  longitude: data['longitude'] as double?,
                                 ),
                               ),
                             );
