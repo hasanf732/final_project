@@ -1,6 +1,5 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:final_project/services/database.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 class NotificationService {
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
@@ -9,28 +8,24 @@ class NotificationService {
     // Request permission from the user
     await _firebaseMessaging.requestPermission();
 
-    // Get the FCM token and save it to the database
+    // For testing purposes, print the FCM token
     final fcmToken = await _firebaseMessaging.getToken();
-    if (fcmToken != null) {
-      await _saveTokenToDatabase(fcmToken);
+    if (kDebugMode) {
+      print('FCM Token: $fcmToken');
     }
 
-    // Listen for token refreshes and update the database
-    _firebaseMessaging.onTokenRefresh.listen(_saveTokenToDatabase);
+    // Subscribe to the 'newEvents' topic
+    await _firebaseMessaging.subscribeToTopic("newEvents");
 
     // Handle incoming messages while the app is in the foreground
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      if (message.notification != null) {
-        // In a real app, you would show a local notification here
-        print('Foreground Message: ${message.notification!.title} - ${message.notification!.body}');
+      if (kDebugMode) {
+        print('Got a message whilst in the foreground!');
+        print('Message data: ${message.data}');
+        if (message.notification != null) {
+          print('Message also contained a notification: ${message.notification}');
+        }
       }
     });
-  }
-
-  Future<void> _saveTokenToDatabase(String token) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      await DatabaseMethods().saveUserToken(token, user.uid);
-    }
   }
 }

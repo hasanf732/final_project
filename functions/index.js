@@ -1,76 +1,57 @@
-const functions = require('firebase-functions');
-const admin = require('firebase-admin');
-admin.initializeApp();
+const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {initializeApp, applicationDefault} = require("firebase-admin/app");
+const {getMessaging} = require("firebase-admin/messaging");
+const logger = require("firebase-functions/logger");
 
-exports.eventReminders = functions.pubsub.schedule('every 60 minutes').onRun(async (context) => {
-    const now = admin.firestore.Timestamp.now();
-    const twentyFourHoursFromNow = admin.firestore.Timestamp.fromMillis(now.toMillis() + 24 * 60 * 60 * 1000);
-    const oneHourFromNow = admin.firestore.Timestamp.fromMillis(now.toMillis() + 1 * 60 * 60 * 1000);
-
-    const events = await admin.firestore().collection('News').get();
-
-    for (const eventDoc of events.docs) {
-        const event = eventDoc.data();
-        const eventId = eventDoc.id;
-        const eventDate = event.Date;
-
-        // Check for 24-hour reminder
-        if (eventDate <= twentyFourHoursFromNow && eventDate > now) {
-            const reminderSent = await wasReminderSent(eventId, '24_hour');
-            if (!reminderSent) {
-                await sendNotificationsForEvent(eventId, event, '24_hour');
-                await markReminderAsSent(eventId, '24_hour');
-            }
-        }
-
-        // Check for 1-hour reminder
-        if (eventDate <= oneHourFromNow && eventDate > now) {
-            const reminderSent = await wasReminderSent(eventId, '1_hour');
-            if (!reminderSent) {
-                await sendNotificationsForEvent(eventId, event, '1_hour');
-                await markReminderAsSent(eventId, '1_hour');
-            }
-        }
-    }
+// 1. Force the use of Application Default Credentials
+initializeApp({
+  credential: applicationDefault(),
+  projectId: 'univent-app-9fb5c'
 });
 
-async function sendNotificationsForEvent(eventId, event, reminderType) {
-    const usersSnapshot = await admin.firestore().collection('users').where('bookedEvents', 'array-contains', eventId).get();
-    if (usersSnapshot.empty) {
-        return;
-    }
+exports.sendEventNotification = onDocumentCreated({
+  region: "us-central1",
+  document: "News/{eventId}"
+}, async (event) => {
+  const eventData = event.data.data();
+  const eventName = eventData.Name;
+  const eventTimestamp = eventData.Date;
 
-    const userIds = usersSnapshot.docs.map(doc => doc.id);
-    const tokens = [];
+  // Safety check: Ensure date exists
+  let eventDate = "an upcoming date";
+  if (eventTimestamp) {
+     eventDate = new Date(eventTimestamp.seconds * 1000).toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric'
+    });
+  }
 
-    for (const userId of userIds) {
-        const userDoc = await admin.firestore().collection('users').doc(userId).get();
-        const userData = userDoc.data();
-        if (userData && userData.fcmToken) {
-            tokens.push(userData.fcmToken);
-        }
-    }
+  logger.log(`New event created: ${eventName} on ${eventDate}`);
 
-    if (tokens.length === 0) {
-        return;
-    }
+  // 2. USE MODERN V1 MESSAGE FORMAT
+  // We put the 'topic' directly inside the message object.
+  const message = {
+    notification: {
+      title: `New Event: ${eventName}`,
+      body: `Check it out, it's happening on ${eventDate}!`,
+    },
+    data: {
+      eventId: event.params.eventId,
+    },
+    topic: "newEvents" // <--- The topic goes here now
+  };
 
-    const message = {
-        notification: {
-            title: 'Event Reminder',
-            body: `Your event '${event.Name}' is starting ${reminderType === '24_hour' ? 'in 24 hours' : 'in 1 hour'}.`
-        },
-        tokens: tokens,
-    };
+  logger.log("Sending message object:", JSON.stringify(message));
 
-    await admin.messaging().sendMulticast(message);
-}
-
-async function wasReminderSent(eventId, reminderType) {
-    const doc = await admin.firestore().collection('reminders').doc(`${eventId}_${reminderType}`).get();
-    return doc.exists;
-}
-
-async function markReminderAsSent(eventId, reminderType) {
-    await admin.firestore().collection('reminders').doc(`${eventId}_${reminderType}`).set({ sent: true });
-}
+  try {
+    // 3. Use the direct .send() method instead of .sendToTopic()
+    const response = await getMessaging().send(message);
+    logger.log("Successfully sent message:", response);
+    return {success: true};
+  } catch (error) {
+    logger.error("Error sending message:", error);
+    // Print the exact error code to help debugging
+    if (error.code) logger.error("Error Code:", error.code);
+    return {error: error.code};
+  }
+});
