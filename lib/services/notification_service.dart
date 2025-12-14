@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:intl/intl.dart';
@@ -17,8 +20,9 @@ class NotificationService {
     await _firebaseMessaging.requestPermission();
 
     // 2. Initialize Local Notifications
+    // Use 'launcher_icon' which is your actual logo, instead of 'ic_launcher' which is the flutter default
     const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('@mipmap/launcher_icon');
     
     const DarwinInitializationSettings initializationSettingsDarwin =
         DarwinInitializationSettings();
@@ -52,29 +56,35 @@ class NotificationService {
     await _firebaseMessaging.subscribeToTopic("newEvents");
 
     // 6. Handle incoming messages while the app is in the foreground
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       if (kDebugMode) {
         print("Received foreground message: ${message.messageId}");
-        print("Notification: ${message.notification?.title}, ${message.notification?.body}");
       }
 
       RemoteNotification? notification = message.notification;
       
-      // Show notification even if 'android' payload is missing, as long as 'notification' exists
       if (notification != null) {
+        // Try to load the logo for the foreground notification too
+        String? largeIconPath;
+        try {
+          largeIconPath = await _getImageFilePathFromAssets('Images/Logo.png', 'large_icon_logo.png');
+        } catch (e) {
+          if (kDebugMode) print("Could not load logo asset: $e");
+        }
+
         _localNotifications.show(
           notification.hashCode,
           notification.title,
           notification.body,
-          const NotificationDetails(
+          NotificationDetails(
             android: AndroidNotificationDetails(
               'high_importance_channel',
               'High Importance Notifications',
               channelDescription: 'This channel is used for important notifications.',
               importance: Importance.max,
               priority: Priority.high,
-              icon: '@mipmap/ic_launcher',
-              largeIcon: DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
+              icon: '@mipmap/launcher_icon', // Use your logo here
+              largeIcon: largeIconPath != null ? FilePathAndroidBitmap(largeIconPath) : null,
             ),
           ),
         );
@@ -93,40 +103,68 @@ class NotificationService {
   }
 
   Future<void> scheduleEventReminder(String eventId, String eventName, DateTime eventDate) async {
-    // Schedule for 24 hours before event
-    DateTime scheduledDate = eventDate.subtract(const Duration(hours: 24));
     final now = DateTime.now();
     
-    // If 24h before is already past, try 1 hour before
-    if (scheduledDate.isBefore(now)) {
-       scheduledDate = eventDate.subtract(const Duration(hours: 1));
+    // Get the logo file path
+    String? largeIconPath;
+    try {
+      largeIconPath = await _getImageFilePathFromAssets('Images/Logo.png', 'large_icon_logo.png');
+    } catch (e) {
+      if (kDebugMode) print("Could not load logo asset: $e");
     }
 
-    // If that is also past, don't schedule
-    if (scheduledDate.isBefore(now)) return;
-
-    await _localNotifications.zonedSchedule(
-      eventId.hashCode,
-      'Event Reminder',
-      'Upcoming: $eventName is starting soon at ${DateFormat('h:mm a').format(eventDate)}!',
-      tz.TZDateTime.from(scheduledDate, tz.local),
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'high_importance_channel',
-          'High Importance Notifications',
-          channelDescription: 'This channel is used for important notifications.',
-          importance: Importance.max,
-          priority: Priority.high,
-          icon: '@mipmap/ic_launcher',
-          largeIcon: DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
-        ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+    final androidDetails = AndroidNotificationDetails(
+      'high_importance_channel',
+      'High Importance Notifications',
+      channelDescription: 'This channel is used for important notifications.',
+      importance: Importance.max,
+      priority: Priority.high,
+      icon: '@mipmap/launcher_icon', // Use your logo here
+      largeIcon: largeIconPath != null ? FilePathAndroidBitmap(largeIconPath) : null,
     );
+
+    final notificationDetails = NotificationDetails(android: androidDetails);
+
+    // 1. Schedule 24 Hours Before
+    final date24h = eventDate.subtract(const Duration(hours: 24));
+    if (date24h.isAfter(now)) {
+      await _localNotifications.zonedSchedule(
+        eventId.hashCode, // ID
+        'Event Reminder: 1 Day Left!',
+        'Your event "$eventName" starts tomorrow at ${DateFormat('h:mm a').format(eventDate)}.',
+        tz.TZDateTime.from(date24h, tz.local),
+        notificationDetails,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    }
+
+    // 2. Schedule 1 Hour Before
+    final date1h = eventDate.subtract(const Duration(hours: 1));
+    if (date1h.isAfter(now)) {
+      await _localNotifications.zonedSchedule(
+        eventId.hashCode + 1, // ID + 1 to avoid conflict
+        'Event Starting Soon!',
+        'Get ready! "$eventName" starts in 1 hour.',
+        tz.TZDateTime.from(date1h, tz.local),
+        notificationDetails,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    }
   }
 
   Future<void> cancelEventReminder(String eventId) async {
+    // Cancel both possible notifications
     await _localNotifications.cancel(eventId.hashCode);
+    await _localNotifications.cancel(eventId.hashCode + 1);
+  }
+
+  Future<String> _getImageFilePathFromAssets(String asset, String filename) async {
+    final byteData = await rootBundle.load(asset);
+    final tempDir = await getTemporaryDirectory();
+    final file = File('${tempDir.path}/$filename');
+    await file.writeAsBytes(byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
+    return file.path;
   }
 }
