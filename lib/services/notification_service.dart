@@ -53,21 +53,28 @@ class NotificationService {
 
     // 6. Handle incoming messages while the app is in the foreground
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      RemoteNotification? notification = message.notification;
-      AndroidNotification? android = message.notification?.android;
+      if (kDebugMode) {
+        print("Received foreground message: ${message.messageId}");
+        print("Notification: ${message.notification?.title}, ${message.notification?.body}");
+      }
 
-      if (notification != null && android != null) {
+      RemoteNotification? notification = message.notification;
+      
+      // Show notification even if 'android' payload is missing, as long as 'notification' exists
+      if (notification != null) {
         _localNotifications.show(
           notification.hashCode,
           notification.title,
           notification.body,
-          NotificationDetails(
+          const NotificationDetails(
             android: AndroidNotificationDetails(
-              channel.id,
-              channel.name,
-              channelDescription: channel.description,
+              'high_importance_channel',
+              'High Importance Notifications',
+              channelDescription: 'This channel is used for important notifications.',
+              importance: Importance.max,
+              priority: Priority.high,
               icon: '@mipmap/ic_launcher',
-              largeIcon: const DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
+              largeIcon: DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
             ),
           ),
         );
@@ -76,10 +83,12 @@ class NotificationService {
   }
 
   Future<void> subscribeToTopic(String topic) async {
+    if (kDebugMode) print("Subscribing to topic: $topic");
     await _firebaseMessaging.subscribeToTopic(topic);
   }
 
   Future<void> unsubscribeFromTopic(String topic) async {
+    if (kDebugMode) print("Unsubscribing from topic: $topic");
     await _firebaseMessaging.unsubscribeFromTopic(topic);
   }
 
